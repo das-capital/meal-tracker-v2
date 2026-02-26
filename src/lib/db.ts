@@ -25,6 +25,29 @@ export interface Favourite {
     createdAt: number;
 }
 
+export interface RecipeIngredient {
+    name: string;
+    weight: number;
+    calories: number;
+    protein: number;
+    fat: number;
+    carbs: number;
+    fiber: number;
+}
+
+export interface Recipe {
+    id?: number;
+    name: string;
+    ingredients: RecipeIngredient[];
+    totalWeight: number;
+    totalCalories: number;
+    totalProtein: number;
+    totalFat: number;
+    totalCarbs: number;
+    totalFiber: number;
+    createdAt: number;
+}
+
 export interface WeightEntry {
     id?: number;
     date: string;
@@ -63,7 +86,7 @@ const DEFAULT_SETTINGS: UserSettings = {
 };
 
 const DB_NAME = 'meal-tracker-db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export const initDB = async (): Promise<IDBPDatabase> => {
     return openDB(DB_NAME, DB_VERSION, {
@@ -82,6 +105,10 @@ export const initDB = async (): Promise<IDBPDatabase> => {
             if (!db.objectStoreNames.contains('weights')) {
                 const weightStore = db.createObjectStore('weights', { keyPath: 'id', autoIncrement: true });
                 weightStore.createIndex('by-date', 'date');
+            }
+            if (!db.objectStoreNames.contains('recipes')) {
+                db.createObjectStore('recipes', { keyPath: 'id', autoIncrement: true })
+                    .createIndex('by-name', 'name', { unique: true });
             }
         },
     });
@@ -150,6 +177,27 @@ export const deleteWeight = async (id: number) => {
     return db.delete('weights', id);
 };
 
+// --- Recipes ---
+export const addRecipe = async (recipe: Omit<Recipe, 'id'>): Promise<void> => {
+    const db = await initDB();
+    await db.add('recipes', recipe);
+};
+
+export const getAllRecipes = async (): Promise<Recipe[]> => {
+    const db = await initDB();
+    return db.getAll('recipes');
+};
+
+export const updateRecipe = async (recipe: Recipe): Promise<void> => {
+    const db = await initDB();
+    await db.put('recipes', recipe);
+};
+
+export const deleteRecipe = async (id: number): Promise<void> => {
+    const db = await initDB();
+    await db.delete('recipes', id);
+};
+
 // --- Settings ---
 export const getSettings = async (): Promise<UserSettings> => {
     const db = await initDB();
@@ -170,4 +218,5 @@ export const resetAllData = async () => {
     await db.clear('settings');
     await db.clear('favourites');
     await db.clear('weights');
+    await db.clear('recipes');
 };

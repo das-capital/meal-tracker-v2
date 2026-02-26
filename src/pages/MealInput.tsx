@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, Send, Sparkles, CheckCircle, AlertCircle, Star, Lightbulb } from 'lucide-react';
+import { Mic, Send, Sparkles, CheckCircle, AlertCircle, Star, Lightbulb, ChefHat } from 'lucide-react';
 import canvasConfetti from 'canvas-confetti';
 import { processInput, getMealSuggestion } from '../lib/ai-parser';
 import { useMeals } from '../hooks/useMeals';
-import { addFavourite, addWeight, getAllFavourites, saveSetting, type Favourite } from '../lib/db';
+import { addFavourite, addWeight, getAllFavourites, getAllRecipes, saveSetting, type Favourite } from '../lib/db';
 import { FavouritesPanel } from '../components/FavouritesPanel';
+import { RecipesPanel } from '../components/RecipesPanel';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 
@@ -44,11 +45,33 @@ export const MealInput = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const [showFavourites, setShowFavourites] = useState(false);
+    const [showRecipes, setShowRecipes] = useState(false);
     const [hasSuggested, setHasSuggested] = useState(false);
     const bottomRef = useRef<HTMLDivElement>(null);
     const msgId = useRef(loadTodayChat().length);
 
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+    useEffect(() => {
+        const handleRecipeLog = async (e: Event) => {
+            const { recipe, weight } = (e as CustomEvent).detail;
+            const ratio = weight / recipe.totalWeight;
+            const mealData = {
+                food: `${weight}g ${recipe.name}`,
+                calories: Math.round(recipe.totalCalories * ratio),
+                protein: Math.round(recipe.totalProtein * ratio),
+                fat: Math.round(recipe.totalFat * ratio),
+                carbs: Math.round(recipe.totalCarbs * ratio),
+                fiber: Math.round(recipe.totalFiber * ratio),
+            };
+            await addMeal(`${weight}g of ${recipe.name}`, mealData);
+            await refreshMeals();
+            fireConfetti();
+            addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData });
+        };
+        window.addEventListener('recipe-log', handleRecipeLog);
+        return () => window.removeEventListener('recipe-log', handleRecipeLog);
+    }, []);
 
     // Persist chat to localStorage whenever messages change
     useEffect(() => { saveTodayChat(messages); }, [messages]);
@@ -130,6 +153,26 @@ export const MealInput = () => {
                 }
             } else {
                 addMsg({ role: 'assistant', type: 'error', text: `No favourite named "${result.name}" found.` });
+            }
+        } else if (result.type === 'recipe_log') {
+            const recipes = await getAllRecipes();
+            const recipe = recipes.find(r => r.name.toLowerCase() === result.name.toLowerCase());
+            if (recipe) {
+                const ratio = result.weight / recipe.totalWeight;
+                const mealData = {
+                    food: `${result.weight}g ${recipe.name}`,
+                    calories: Math.round(recipe.totalCalories * ratio),
+                    protein: Math.round(recipe.totalProtein * ratio),
+                    fat: Math.round(recipe.totalFat * ratio),
+                    carbs: Math.round(recipe.totalCarbs * ratio),
+                    fiber: Math.round(recipe.totalFiber * ratio),
+                };
+                await addMeal(`${result.weight}g of ${recipe.name}`, mealData);
+                fireConfetti();
+                addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData });
+                triggerSuggestion();
+            } else {
+                addMsg({ role: 'assistant', type: 'error', text: `No recipe named "${result.name}" found.` });
             }
         } else if (result.type === 'weight') {
             await addWeight({ date: format(new Date(), 'yyyy-MM-dd'), weight: result.weight, timestamp: Date.now() });
@@ -274,6 +317,12 @@ export const MealInput = () => {
                     >
                         <Star className="w-4 h-4" />
                     </button>
+                    <button
+                        onClick={() => setShowRecipes(true)}
+                        className="w-8 h-8 rounded-xl flex items-center justify-center text-emerald-400/60 hover:text-emerald-400 transition-colors shrink-0"
+                    >
+                        <ChefHat className="w-4 h-4" />
+                    </button>
                     <textarea
                         value={input}
                         onChange={e => setInput(e.target.value)}
@@ -310,6 +359,11 @@ export const MealInput = () => {
                 open={showFavourites}
                 onClose={() => setShowFavourites(false)}
                 onLogFavourite={handleLogFavourite}
+            />
+
+            <RecipesPanel
+                open={showRecipes}
+                onClose={() => setShowRecipes(false)}
             />
         </motion.div>
     );

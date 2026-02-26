@@ -1,4 +1,4 @@
-import { getSettings, getMealsByDate, getAllMeals, type Meal } from './db';
+import { getSettings, getMealsByDate, getAllMeals, getAllRecipes, type Meal, type RecipeIngredient } from './db';
 import { format, subDays } from 'date-fns';
 
 export interface ParsedMeal {
@@ -18,6 +18,7 @@ export type AIResponse =
     | { type: 'weight'; weight: number }
     | { type: 'height'; height: number }
     | { type: 'age'; age: number }
+    | { type: 'recipe_log'; name: string; weight: number }
     | { type: 'error'; message: string };
 
 async function callGemini(apiKey: string, prompt: string): Promise<string> {
@@ -42,6 +43,43 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
     return raw.replace(/```json/g, '').replace(/```/g, '').trim();
 }
 
+export const parseIngredients = async (text: string): Promise<RecipeIngredient[] | null> => {
+    const settings = await getSettings();
+    if (!settings.apiKey) return null;
+
+    const prompt = `You are a nutrition assistant. Extract all ingredients from the following text and return their nutritional information.
+
+Respond ONLY with valid JSON in this exact format:
+{"type":"ingredients","items":[
+  {"name":"ingredient name","weight":number_grams,"calories":number,"protein":number,"fat":number,"carbs":number,"fiber":number}
+]}
+
+All nutritional values must be integers based on the specified weight.
+If no weight is given for an ingredient, estimate a reasonable serving size in grams.
+Use standard nutritional databases for accuracy.
+
+Text: ${text}`;
+
+    try {
+        const raw = await callGemini(settings.apiKey, prompt);
+        const parsed = JSON.parse(raw);
+        if (parsed.type === 'ingredients' && Array.isArray(parsed.items)) {
+            return parsed.items.map((item: any) => ({
+                name: String(item.name || ''),
+                weight: parseInt(item.weight) || 0,
+                calories: parseInt(item.calories) || 0,
+                protein: parseInt(item.protein) || 0,
+                fat: parseInt(item.fat) || 0,
+                carbs: parseInt(item.carbs) || 0,
+                fiber: parseInt(item.fiber) || 0,
+            }));
+        }
+        return null;
+    } catch {
+        return null;
+    }
+};
+
 export const processInput = async (input: string): Promise<AIResponse> => {
     const settings = await getSettings();
     const apiKey = settings.apiKey;
@@ -52,7 +90,10 @@ export const processInput = async (input: string): Promise<AIResponse> => {
 
     try {
         const today = format(new Date(), 'yyyy-MM-dd');
-        const todayMeals = await getMealsByDate(today);
+        const [todayMeals, allRecipes] = await Promise.all([
+            getMealsByDate(today),
+            getAllRecipes(),
+        ]);
 
         const mealContext = todayMeals.length > 0
             ? todayMeals.map(m =>
@@ -66,6 +107,10 @@ export const processInput = async (input: string): Promise<AIResponse> => {
             carbs: acc.carbs + (m.parsed[0]?.carbs || 0),
             fiber: acc.fiber + (m.parsed[0]?.fiber || 0),
         }), { calories: 0, protein: 0, carbs: 0, fiber: 0 });
+
+        const recipeContext = allRecipes.length > 0
+            ? allRecipes.map(r => `${r.name} (${r.totalWeight}g total)`).join(', ')
+            : 'None';
 
         const systemPrompt = `You are a nutrition assistant in a personal meal tracker app. The user tracks Indian and general food.
 
@@ -92,7 +137,11 @@ Your job — determine the user's intent and respond with the correct JSON forma
 7. CONVERSATIONAL: For questions about nutrition, health, or their data.
    Respond: {"type":"chat","message":"your response"}
 
+8. LOGGING A RECIPE: If user says they ate a specific weight of a saved recipe name listed below, respond: {"type":"recipe_log","name":"exact recipe name","weight":number_in_grams}
+
 User's portion sizes: bowl (liquid) ${settings.unitBowlLiquid}ml, bowl (solid) ${settings.unitBowlSolid}g, tbsp ${settings.unitTbsp}g, tsp ${settings.unitTsp}g
+
+Saved recipes: ${recipeContext}
 
 Today's meals:
 ${mealContext}
@@ -126,6 +175,7 @@ User says: ${input}`;
         if (parsed.type === 'weight') return { type: 'weight', weight: parseFloat(parsed.weight) || 0 };
         if (parsed.type === 'height') return { type: 'height', height: parseInt(parsed.height) || 0 };
         if (parsed.type === 'age') return { type: 'age', age: parseInt(parsed.age) || 0 };
+        if (parsed.type === 'recipe_log') return { type: 'recipe_log', name: parsed.name, weight: parseInt(parsed.weight) || 0 };
         if (parsed.type === 'chat') return { type: 'chat', message: parsed.message };
 
         throw new Error('Unexpected response format');
