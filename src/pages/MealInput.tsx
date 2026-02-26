@@ -4,7 +4,7 @@ import { Mic, Send, Sparkles, CheckCircle, AlertCircle, Star, Lightbulb } from '
 import canvasConfetti from 'canvas-confetti';
 import { processInput, getMealSuggestion } from '../lib/ai-parser';
 import { useMeals } from '../hooks/useMeals';
-import { addFavourite, addWeight, getAllFavourites, type Favourite } from '../lib/db';
+import { addFavourite, addWeight, getAllFavourites, saveSetting, type Favourite } from '../lib/db';
 import { FavouritesPanel } from '../components/FavouritesPanel';
 import { format } from 'date-fns';
 import clsx from 'clsx';
@@ -133,7 +133,14 @@ export const MealInput = () => {
             }
         } else if (result.type === 'weight') {
             await addWeight({ date: format(new Date(), 'yyyy-MM-dd'), weight: result.weight, timestamp: Date.now() });
-            addMsg({ role: 'assistant', type: 'weight', text: `Weight logged: ${result.weight} kg` });
+            await saveSetting('profileWeight', result.weight);
+            addMsg({ role: 'assistant', type: 'weight', text: `Weight logged: ${result.weight} kg (profile updated)` });
+        } else if (result.type === 'height') {
+            await saveSetting('profileHeight', result.height);
+            addMsg({ role: 'assistant', type: 'weight', text: `Height saved: ${result.height} cm (profile updated)` });
+        } else if (result.type === 'age') {
+            await saveSetting('profileAge', result.age);
+            addMsg({ role: 'assistant', type: 'weight', text: `Age saved: ${result.age} years (profile updated)` });
         } else if (result.type === 'chat') {
             addMsg({ role: 'assistant', type: 'chat', text: result.message });
         } else {
@@ -171,7 +178,7 @@ export const MealInput = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex flex-col h-[calc(100vh-9rem)] max-w-md mx-auto px-4"
+            className="flex flex-col h-[calc(100vh-9rem)] max-w-md mx-auto px-4 select-text"
         >
             {/* Chat area */}
             <div className="flex-1 overflow-y-auto py-4 space-y-3 pb-4">

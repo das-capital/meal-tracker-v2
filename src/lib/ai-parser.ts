@@ -16,6 +16,8 @@ export type AIResponse =
     | { type: 'favourite_save'; name: string }
     | { type: 'favourite_log'; name: string }
     | { type: 'weight'; weight: number }
+    | { type: 'height'; height: number }
+    | { type: 'age'; age: number }
     | { type: 'error'; message: string };
 
 async function callGemini(apiKey: string, prompt: string): Promise<string> {
@@ -81,7 +83,13 @@ Your job — determine the user's intent and respond with the correct JSON forma
 4. LOGGING WEIGHT: If the user mentions their weight like "my weight is 74kg" or "I weigh 74".
    Respond: {"type":"weight","weight":number_in_kg}
 
-5. CONVERSATIONAL: For questions about nutrition, health, or their data.
+5. LOGGING HEIGHT: If the user mentions their height like "my height is 5'10" or "I am 175cm tall". Always convert to cm.
+   Respond: {"type":"height","height":number_in_cm}
+
+6. LOGGING AGE: If the user mentions their age like "I am 30 years old" or "my age is 30".
+   Respond: {"type":"age","age":number}
+
+7. CONVERSATIONAL: For questions about nutrition, health, or their data.
    Respond: {"type":"chat","message":"your response"}
 
 User's portion sizes: bowl (liquid) ${settings.unitBowlLiquid}ml, bowl (solid) ${settings.unitBowlSolid}g, tbsp ${settings.unitTbsp}g, tsp ${settings.unitTsp}g
@@ -116,6 +124,8 @@ User says: ${input}`;
         if (parsed.type === 'favourite_save') return { type: 'favourite_save', name: parsed.name };
         if (parsed.type === 'favourite_log') return { type: 'favourite_log', name: parsed.name };
         if (parsed.type === 'weight') return { type: 'weight', weight: parseFloat(parsed.weight) || 0 };
+        if (parsed.type === 'height') return { type: 'height', height: parseInt(parsed.height) || 0 };
+        if (parsed.type === 'age') return { type: 'age', age: parseInt(parsed.age) || 0 };
         if (parsed.type === 'chat') return { type: 'chat', message: parsed.message };
 
         throw new Error('Unexpected response format');

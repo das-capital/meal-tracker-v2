@@ -56,7 +56,7 @@ export const FavouritesPanel = ({ open, onClose, onLogFavourite }: Props) => {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 bg-black/50 z-40"
+                        className="fixed inset-0 bg-black/50 z-[60]"
                         onClick={onClose}
                     />
                     <motion.div
@@ -64,7 +64,7 @@ export const FavouritesPanel = ({ open, onClose, onLogFavourite }: Props) => {
                         animate={{ y: 0 }}
                         exit={{ y: '100%' }}
                         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                        className="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-white/10 rounded-t-3xl z-50 max-h-[70vh] flex flex-col"
+                        className="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-white/10 rounded-t-3xl z-[70] max-h-[70vh] flex flex-col pb-20"
                     >
                         <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
                             <div className="flex items-center gap-2">

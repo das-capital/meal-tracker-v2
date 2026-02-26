@@ -5,7 +5,8 @@ import { useSettings } from '../hooks/useSettings';
 import { EmeraldGlowProgressRing } from '../components/EmeraldGlowProgressRing';
 import { deleteMeal, type Meal } from '../lib/db';
 import { getSmartObservations } from '../lib/ai-parser';
-import { Trash2, Brain } from 'lucide-react';
+import { Trash2, Brain, Edit2 } from 'lucide-react';
+import { EditMealModal } from '../components/EditMealModal';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 
@@ -32,6 +33,7 @@ export const Home = () => {
     const [showAbsolute, setShowAbsolute] = useState(false);
     const [observation, setObservation] = useState<string | null>(null);
     const [loadingObs, setLoadingObs] = useState(false);
+    const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
 
     useEffect(() => {
         const loadObservations = async () => {
@@ -118,7 +120,10 @@ export const Home = () => {
                             <div className="flex items-center gap-1 shrink-0">
                                 <span className="text-emerald-400 font-bold text-sm">{meal.totalCalories}</span>
                                 <span className="text-zinc-600 text-xs">kcal</span>
-                                <button onClick={() => meal.id && handleDelete(meal.id)} className="ml-1 p-1.5 text-zinc-600 active:text-red-400">
+                                <button onClick={() => setEditingMeal(meal)} className="ml-1 p-1.5 text-zinc-600 active:text-blue-400">
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => meal.id && handleDelete(meal.id)} className="p-1.5 text-zinc-600 active:text-red-400">
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                             </div>
@@ -126,6 +131,12 @@ export const Home = () => {
                     ))
                 )}
             </div>
+
+            <EditMealModal
+                meal={editingMeal}
+                onClose={() => setEditingMeal(null)}
+                onSaved={refreshMeals}
+            />
         </motion.div>
     );
 };
