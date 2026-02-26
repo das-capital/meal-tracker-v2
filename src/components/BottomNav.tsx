@@ -1,11 +1,12 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { MessageSquare, BarChart2, CalendarDays } from 'lucide-react';
+import { MessageSquare, BarChart2, CalendarDays, Trophy } from 'lucide-react';
 import clsx from 'clsx';
 
 const tabs = [
     { path: '/', icon: MessageSquare, label: 'Input' },
     { path: '/today', icon: BarChart2, label: 'Today' },
     { path: '/history', icon: CalendarDays, label: 'History' },
+    { path: '/profile', icon: Trophy, label: 'Profile' },
 ];
 
 export const BottomNav = () => {

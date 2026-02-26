@@ -6,7 +6,9 @@ import { Home } from './pages/Home';
 import { MealInput } from './pages/MealInput';
 import { History } from './pages/History';
 import { SettingsPage } from './pages/Settings';
+import { Profile } from './pages/Profile';
 import { BottomNav } from './components/BottomNav';
+import { BadgeBar } from './components/BadgeBar';
 
 function Layout() {
     const location = useLocation();
@@ -16,7 +18,7 @@ function Layout() {
     return (
         <div className="min-h-screen bg-background text-zinc-100 font-sans select-none flex flex-col">
             {/* Top Bar */}
-            <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
+            <div className="flex items-center justify-between px-4 pt-4 pb-1 shrink-0">
                 <span className="text-sm font-medium text-zinc-400">
                     {format(new Date(), 'EEE, MMM d')}
                 </span>
@@ -28,6 +30,9 @@ function Layout() {
                 </button>
             </div>
 
+            {/* Badge Bar — earned badges at the top */}
+            {!isSettings && <BadgeBar />}
+
             {/* Page Content */}
             <div className="flex-1 overflow-hidden">
                 <AnimatePresence mode="wait">
@@ -35,6 +40,7 @@ function Layout() {
                         <Route path="/" element={<MealInput />} />
                         <Route path="/today" element={<Home />} />
                         <Route path="/history" element={<History />} />
+                        <Route path="/profile" element={<Profile />} />
                         <Route path="/settings" element={<SettingsPage />} />
                     </Routes>
                 </AnimatePresence>
