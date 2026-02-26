@@ -1,4 +1,4 @@
-import { getSettings, getMealsByDate, getAllMeals, getAllRecipes, type Meal, type RecipeIngredient } from './db';
+import { getSettings, getMealsByDate, getAllMeals, getAllRecipes, type RecipeIngredient } from './db';
 import { format, subDays } from 'date-fns';
 
 export interface ParsedMeal {
