@@ -132,6 +132,7 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 - [x] Edit logged meals (EditMealModal)
 - [x] PWA (installable, service worker)
 - [x] **Recipes feature** — create recipes from ingredients (AI parses macros), log a specific weight of a recipe with proportional macro calculation, edit and delete recipes
+- [x] **Production Deployment** — Hosted on Vercel, successfully installed as a mobile app on Vivo/Android.
 
 ---
 
@@ -139,7 +140,10 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 
 > Update this section at the end of each session.
 
-- [ ] *(nothing planned yet — add ideas here)*
+- [ ] Add data visualization (e.g., 7-day calorie trend chart on Home or History)
+- [ ] Add "Quick Add" buttons for common items (water, coffee)
+- [ ] Implement automated weekly summary reports via Gemini
+- [ ] Improve AI error handling for very ambiguous food descriptions
 
 ---
 
