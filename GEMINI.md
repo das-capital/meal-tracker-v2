@@ -140,6 +140,31 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 
 > Update this section at the end of each session.
 
+### 🔴 In Progress — Firebase Auth + Cloud Sync
+Full plan is ready. Implementation not started yet.
+
+**Goal:** Google Sign-In + Firestore cloud sync. Guest mode (IndexedDB) still works. On first sign-in, local data is merged into cloud. Data persists across devices and sessions.
+
+**New files to create:**
+- `src/lib/firebase.ts` — Firebase app init
+- `src/lib/db.idb.ts` — Current db.ts logic moved here
+- `src/lib/db.firestore.ts` — Firestore implementation of all CRUD functions
+- `src/lib/merge.ts` — One-time local→cloud merge on first sign-in
+- `src/contexts/AuthContext.tsx` — Auth state, triggers merge, switches backend
+- `src/components/AuthButton.tsx` — Google sign-in/out button with avatar
+
+**Files to modify:**
+- `src/lib/db.ts` → becomes routing layer (dispatches to IDB or Firestore based on auth)
+- `src/main.tsx` → wrap with `<AuthProvider>`
+- `src/pages/Settings.tsx` → add Account section with `<AuthButton>`
+
+**Key constraint:** All existing consumers (pages, components, hooks, ai-parser) keep their `import from '../lib/db'` unchanged — the routing layer is transparent.
+
+**npm:** `npm install firebase` (only new dependency)
+
+**Firebase console setup required first:** Enable Google auth, create Firestore DB, deploy security rules, add `.env.local` with config values.
+
+### Backlog (after Firebase)
 - [ ] Add data visualization (e.g., 7-day calorie trend chart on Home or History)
 - [ ] Add "Quick Add" buttons for common items (water, coffee)
 - [ ] Implement automated weekly summary reports via Gemini

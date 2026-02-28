@@ -1,222 +1,89 @@
-import { openDB, type IDBPDatabase } from 'idb';
+/**
+ * db.ts — routing layer
+ *
+ * All existing consumers keep their `import from '../lib/db'` unchanged.
+ * This module routes each call to IndexedDB (guest) or Firestore (signed in)
+ * based on the current auth state, which is set by AuthContext via setCurrentUser().
+ */
 
-export interface Meal {
-    id?: number;
-    date: string;
-    timestamp: number;
-    content: string;
-    parsed: {
-        food: string;
-        calories: number;
-        protein: number;
-        fat: number;
-        carbs: number;
-        fiber: number;
-    }[];
-    totalCalories: number;
-}
+export type { Meal, Favourite, WeightEntry, Recipe, RecipeIngredient, UserSettings } from './db.idb';
+export { DEFAULT_SETTINGS } from './db.idb';
 
-export interface Favourite {
-    id?: number;
-    name: string;
-    content: string;
-    parsed: Meal['parsed'];
-    totalCalories: number;
-    createdAt: number;
-}
+import * as idb from './db.idb';
+import * as fs from './db.firestore';
+import type { Meal, Favourite, WeightEntry, Recipe, UserSettings } from './db.idb';
 
-export interface RecipeIngredient {
-    name: string;
-    weight: number;
-    calories: number;
-    protein: number;
-    fat: number;
-    carbs: number;
-    fiber: number;
-}
+let _uid: string | null = null;
 
-export interface Recipe {
-    id?: number;
-    name: string;
-    ingredients: RecipeIngredient[];
-    totalWeight: number;
-    totalCalories: number;
-    totalProtein: number;
-    totalFat: number;
-    totalCarbs: number;
-    totalFiber: number;
-    createdAt: number;
-}
-
-export interface WeightEntry {
-    id?: number;
-    date: string;
-    weight: number;
-    timestamp: number;
-}
-
-export interface UserSettings {
-    apiKey: string;
-    dailyCalories: number;
-    dailyProtein: number;
-    dailyCarbs: number;
-    dailyFiber: number;
-    unitBowlLiquid: number;
-    unitBowlSolid: number;
-    unitTbsp: number;
-    unitTsp: number;
-    profileAge: number;
-    profileWeight: number;
-    profileHeight: number;
-}
-
-const DEFAULT_SETTINGS: UserSettings = {
-    apiKey: '',
-    dailyCalories: 2000,
-    dailyProtein: 120,
-    dailyCarbs: 250,
-    dailyFiber: 30,
-    unitBowlLiquid: 250,
-    unitBowlSolid: 150,
-    unitTbsp: 15,
-    unitTsp: 5,
-    profileAge: 0,
-    profileWeight: 0,
-    profileHeight: 0,
-};
-
-const DB_NAME = 'meal-tracker-db';
-const DB_VERSION = 4;
-
-export const initDB = async (): Promise<IDBPDatabase> => {
-    return openDB(DB_NAME, DB_VERSION, {
-        upgrade(db) {
-            if (!db.objectStoreNames.contains('meals')) {
-                const mealStore = db.createObjectStore('meals', { keyPath: 'id', autoIncrement: true });
-                mealStore.createIndex('by-date', 'date');
-            }
-            if (!db.objectStoreNames.contains('settings')) {
-                db.createObjectStore('settings', { keyPath: 'key' });
-            }
-            if (!db.objectStoreNames.contains('favourites')) {
-                const favStore = db.createObjectStore('favourites', { keyPath: 'id', autoIncrement: true });
-                favStore.createIndex('by-name', 'name', { unique: true });
-            }
-            if (!db.objectStoreNames.contains('weights')) {
-                const weightStore = db.createObjectStore('weights', { keyPath: 'id', autoIncrement: true });
-                weightStore.createIndex('by-date', 'date');
-            }
-            if (!db.objectStoreNames.contains('recipes')) {
-                db.createObjectStore('recipes', { keyPath: 'id', autoIncrement: true })
-                    .createIndex('by-name', 'name', { unique: true });
-            }
-        },
-    });
+/** Called by AuthContext whenever auth state changes. */
+export const setCurrentUser = (uid: string | null) => {
+    _uid = uid;
 };
 
 // --- Meals ---
-export const addMeal = async (meal: Omit<Meal, 'id'>) => {
-    const db = await initDB();
-    return db.add('meals', meal);
-};
+export const addMeal = (meal: Omit<Meal, 'id'>) =>
+    _uid ? fs.addMeal(_uid, meal) : idb.addMeal(meal);
 
-export const getMealsByDate = async (date: string): Promise<Meal[]> => {
-    const db = await initDB();
-    return db.getAllFromIndex('meals', 'by-date', date);
-};
+export const getMealsByDate = (date: string) =>
+    _uid ? fs.getMealsByDate(_uid, date) : idb.getMealsByDate(date);
 
-export const getAllMeals = async (): Promise<Meal[]> => {
-    const db = await initDB();
-    return db.getAll('meals');
-};
+export const getAllMeals = () =>
+    _uid ? fs.getAllMeals(_uid) : idb.getAllMeals();
 
-export const updateMeal = async (meal: Meal) => {
-    const db = await initDB();
-    return db.put('meals', meal);
-};
+export const updateMeal = (meal: Meal) =>
+    _uid ? fs.updateMeal(_uid, meal) : idb.updateMeal(meal);
 
-export const deleteMeal = async (id: number) => {
-    const db = await initDB();
-    return db.delete('meals', id);
-};
+export const deleteMeal = (id: number) =>
+    _uid ? fs.deleteMeal(_uid, id) : idb.deleteMeal(id);
 
 // --- Favourites ---
-export const addFavourite = async (fav: Omit<Favourite, 'id'>) => {
-    const db = await initDB();
-    return db.add('favourites', fav);
-};
+export const addFavourite = (fav: Omit<Favourite, 'id'>) =>
+    _uid ? fs.addFavourite(_uid, fav) : idb.addFavourite(fav);
 
-export const getAllFavourites = async (): Promise<Favourite[]> => {
-    const db = await initDB();
-    return db.getAll('favourites');
-};
+export const getAllFavourites = () =>
+    _uid ? fs.getAllFavourites(_uid) : idb.getAllFavourites();
 
-export const updateFavourite = async (fav: Favourite) => {
-    const db = await initDB();
-    return db.put('favourites', fav);
-};
+export const updateFavourite = (fav: Favourite) =>
+    _uid ? fs.updateFavourite(_uid, fav) : idb.updateFavourite(fav);
 
-export const deleteFavourite = async (id: number) => {
-    const db = await initDB();
-    return db.delete('favourites', id);
-};
+export const deleteFavourite = (id: number) =>
+    _uid ? fs.deleteFavourite(_uid, id) : idb.deleteFavourite(id);
 
 // --- Weights ---
-export const addWeight = async (entry: Omit<WeightEntry, 'id'>) => {
-    const db = await initDB();
-    return db.add('weights', entry);
-};
+export const addWeight = (entry: Omit<WeightEntry, 'id'>) =>
+    _uid ? fs.addWeight(_uid, entry) : idb.addWeight(entry);
 
-export const getAllWeights = async (): Promise<WeightEntry[]> => {
-    const db = await initDB();
-    return db.getAll('weights');
-};
+export const getAllWeights = () =>
+    _uid ? fs.getAllWeights(_uid) : idb.getAllWeights();
 
-export const deleteWeight = async (id: number) => {
-    const db = await initDB();
-    return db.delete('weights', id);
-};
+export const deleteWeight = (id: number) =>
+    _uid ? fs.deleteWeight(_uid, id) : idb.deleteWeight(id);
 
 // --- Recipes ---
-export const addRecipe = async (recipe: Omit<Recipe, 'id'>): Promise<void> => {
-    const db = await initDB();
-    await db.add('recipes', recipe);
-};
+export const addRecipe = (recipe: Omit<Recipe, 'id'>) =>
+    _uid ? fs.addRecipe(_uid, recipe) : idb.addRecipe(recipe);
 
-export const getAllRecipes = async (): Promise<Recipe[]> => {
-    const db = await initDB();
-    return db.getAll('recipes');
-};
+export const getAllRecipes = () =>
+    _uid ? fs.getAllRecipes(_uid) : idb.getAllRecipes();
 
-export const updateRecipe = async (recipe: Recipe): Promise<void> => {
-    const db = await initDB();
-    await db.put('recipes', recipe);
-};
+export const updateRecipe = (recipe: Recipe) =>
+    _uid ? fs.updateRecipe(_uid, recipe) : idb.updateRecipe(recipe);
 
-export const deleteRecipe = async (id: number): Promise<void> => {
-    const db = await initDB();
-    await db.delete('recipes', id);
-};
+export const deleteRecipe = (id: number) =>
+    _uid ? fs.deleteRecipe(_uid, id) : idb.deleteRecipe(id);
 
 // --- Settings ---
-export const getSettings = async (): Promise<UserSettings> => {
-    const db = await initDB();
-    const stored = await db.getAll('settings');
-    const settings: any = { ...DEFAULT_SETTINGS };
-    stored.forEach((item: any) => { settings[item.key] = item.value; });
-    return settings as UserSettings;
-};
+export const getSettings = () =>
+    _uid ? fs.getSettings(_uid) : idb.getSettings();
 
-export const saveSetting = async (key: keyof UserSettings, value: any) => {
-    const db = await initDB();
-    return db.put('settings', { key, value });
-};
+export const saveSetting = (key: keyof UserSettings, value: any) =>
+    _uid ? fs.saveSetting(_uid, key, value) : idb.saveSetting(key, value);
 
+// Reset clears both backends when signed in to leave a clean state
 export const resetAllData = async () => {
-    const db = await initDB();
-    await db.clear('meals');
-    await db.clear('settings');
-    await db.clear('favourites');
-    await db.clear('weights');
-    await db.clear('recipes');
+    if (_uid) {
+        await Promise.all([fs.resetAllData(_uid), idb.resetAllData()]);
+    } else {
+        await idb.resetAllData();
+    }
 };

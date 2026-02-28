@@ -131,6 +131,7 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 - [x] PWA (installable, service worker)
 - [x] **Recipes feature** — create recipes from ingredients (AI parses macros), log a specific weight of a recipe with proportional macro calculation, edit and delete recipes
 - [x] **Production Deployment** — Hosted on Vercel, successfully installed as a mobile app on Vivo/Android.
+- [x] **Firebase Auth + Cloud Sync** — Google Sign-In, Firestore backend, transparent routing layer in db.ts, one-time IDB→Firestore merge on first sign-in. Guest mode (IDB) still works when not signed in.
 
 ---
 
@@ -138,6 +139,12 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 
 > Update this section at the end of each session.
 
+### 🟡 Firebase Auth — Pending: Vercel env vars + authorized domain
+Implementation is complete and builds successfully. Two manual steps remain before it works in production:
+1. Add env vars to Vercel project settings (see list in `.env.local`)
+2. Add Vercel domain to Firebase Auth → Settings → Authorized domains
+
+### Backlog (after Firebase)
 - [ ] Add data visualization (e.g., 7-day calorie trend chart on Home or History)
 - [ ] Add "Quick Add" buttons for common items (water, coffee)
 - [ ] Implement automated weekly summary reports via Gemini

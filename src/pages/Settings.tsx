@@ -1,9 +1,11 @@
 import { motion } from 'framer-motion';
-import { ArrowLeft, Save, Key, Target, Ruler, Trash2, AlertTriangle, Download, User } from 'lucide-react';
+import { ArrowLeft, Save, Key, Target, Ruler, Trash2, AlertTriangle, Download, User, Cloud } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../hooks/useSettings';
 import { resetAllData, getAllMeals } from '../lib/db';
 import { useState } from 'react';
+import { AuthButton } from '../components/AuthButton';
+import { useAuth } from '../contexts/AuthContext';
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="flex flex-col gap-1.5">
@@ -17,6 +19,7 @@ const inputCls = "bg-zinc-900/50 rounded-xl border border-white/10 p-3 text-zinc
 export const SettingsPage = () => {
     const navigate = useNavigate();
     const { settings, loading, updateSetting } = useSettings();
+    const { user } = useAuth();
     const [saved, setSaved] = useState(false);
 
     const handleSave = () => {
@@ -63,7 +66,20 @@ export const SettingsPage = () => {
 
             <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-8">
 
-                {/* Claude API Key */}
+                {/* Account / Cloud Sync */}
+                <section className="space-y-3">
+                    <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                        <Cloud className="w-3.5 h-3.5" /> Account
+                    </h2>
+                    <AuthButton />
+                    <p className="text-xs text-zinc-600">
+                        {user
+                            ? 'Your data syncs automatically across devices.'
+                            : 'Sign in to back up and sync your data across devices.'}
+                    </p>
+                </section>
+
+                {/* Gemini API Key */}
                 <section className="space-y-3">
                     <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
                         <Key className="w-3.5 h-3.5" /> Gemini API Key

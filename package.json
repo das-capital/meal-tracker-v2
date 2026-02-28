@@ -13,6 +13,7 @@
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "firebase": "^12.9.0",
     "framer-motion": "^12.24.10",
     "idb": "^8.0.3",
     "lucide-react": "^0.562.0",

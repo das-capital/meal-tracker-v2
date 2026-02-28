@@ -9,11 +9,21 @@ import { SettingsPage } from './pages/Settings';
 import { Profile } from './pages/Profile';
 import { BottomNav } from './components/BottomNav';
 import { BadgeBar } from './components/BadgeBar';
+import { useAuth } from './contexts/AuthContext';
 
 function Layout() {
     const location = useLocation();
     const navigate = useNavigate();
     const isSettings = location.pathname === '/settings';
+    const { loading } = useAuth();
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-zinc-900 flex items-center justify-center">
+                <div className="text-zinc-600 text-sm">Loading...</div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-background text-zinc-100 font-sans select-none flex flex-col">
