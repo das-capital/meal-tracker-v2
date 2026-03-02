@@ -24,6 +24,7 @@ A personal mobile-first PWA for tracking daily food intake, weight, and nutritio
 | Icons | Lucide React |
 | Routing | React Router v7 |
 | Local DB | IndexedDB via `idb` library |
+| Cloud DB + Auth | Firebase (Firestore + Google Auth) |
 | AI | Google Gemini 2.5 Flash (REST API, user provides their own key) |
 | PWA | vite-plugin-pwa |
 
@@ -34,7 +35,11 @@ A personal mobile-first PWA for tracking daily food intake, weight, and nutritio
 ```
 src/
   lib/
-    db.ts          — All IndexedDB logic (stores, interfaces, CRUD)
+    db.ts          — Routing layer: dispatches to IDB or Firestore based on auth state
+    db.idb.ts      — Full IndexedDB implementation (all interfaces + CRUD)
+    db.firestore.ts — Full Firestore implementation (same function signatures, uid as first arg)
+    firebase.ts    — Firebase app, auth, and Firestore instances
+    merge.ts       — One-time IDB → Firestore migration on first sign-in
     ai-parser.ts   — All Gemini API calls and response parsing
   pages/
     MealInput.tsx  — Main chat input page (default route "/")
@@ -48,9 +53,12 @@ src/
     FavouritesPanel.tsx   — Slide-up panel for saved favourite meals
     RecipesPanel.tsx      — Slide-up panel for custom recipes
     EditMealModal.tsx     — Modal for editing a logged meal
+    AuthButton.tsx        — Google sign-in/out button with avatar
+  contexts/
+    AuthContext.tsx — Auth state, triggers merge on first sign-in, sets DB routing backend
   hooks/
     useMeals.ts    — Hook wrapping meal DB operations
-App.tsx            — Router + layout shell
+App.tsx            — Router + layout shell (shows loading screen while auth resolves)
 ```
 
 ---
@@ -72,7 +80,32 @@ App.tsx            — Router + layout shell
 
 ---
 
-## Key Interfaces (db.ts)
+## Database Routing Layer (db.ts)
+
+`db.ts` is no longer a direct IDB implementation — it is a transparent routing layer. All existing consumers (`import from '../lib/db'`) are unchanged.
+
+- **Guest mode** (not signed in): all calls go to IndexedDB via `db.idb.ts`
+- **Signed in**: all calls go to Firestore via `db.firestore.ts`
+- Routing is controlled by a module-level `_uid` variable set by `AuthContext` via `setCurrentUser(uid)`
+
+**Firestore data structure:**
+```
+/users/{uid}/meals/{numericId}
+/users/{uid}/favourites/{numericId}
+/users/{uid}/weights/{numericId}
+/users/{uid}/recipes/{numericId}
+/users/{uid}/settings/data       ← single merged document for all settings
+```
+
+**IDs in Firestore:** Generated as `Date.now() + random(0-999)` — stored as a numeric field `id` in each document, and used as the Firestore document path (`String(id)`). This keeps IDs compatible with the existing `number` type used throughout the codebase.
+
+**Merge on first sign-in:** `merge.ts` checks if Firestore already has meals for the user. If not, it copies all IDB data to Firestore. This prevents duplicate data when signing in from a second device.
+
+**Reset behaviour:** When signed in, `resetAllData()` clears both Firestore and IDB.
+
+---
+
+## Key Interfaces (db.idb.ts)
 
 ```typescript
 Meal            — logged meal with parsed macros array + totalCalories
@@ -82,6 +115,18 @@ UserSettings    — apiKey, daily goals, portion unit sizes, profile (age/weight
 RecipeIngredient — name, weight(g), calories, protein, fat, carbs, fiber
 Recipe          — name, ingredients[], totalWeight, total macros, createdAt
 ```
+
+All interfaces and `DEFAULT_SETTINGS` are defined in `db.idb.ts` and re-exported from `db.ts`.
+
+---
+
+## Auth (AuthContext.tsx)
+
+- Wraps the app in `main.tsx` via `<AuthProvider>`
+- Listens to `onAuthStateChanged` — calls `setCurrentUser(uid)` before setting React state, so the routing layer is ready before any component re-renders
+- On first sign-in: triggers `mergeLocalDataToFirestore(uid)`
+- Provides: `user`, `loading`, `signIn()`, `signOut()`
+- `App.tsx` shows a loading screen while `loading = true` — prevents any DB calls before auth resolves
 
 ---
 
@@ -110,6 +155,8 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 - **Recipe logging from panel** uses a `CustomEvent('recipe-log')` dispatched on `window` — MealInput listens for it via `useEffect`.
 - **Confetti** on meal log: `canvas-confetti` shooting from both sides.
 - **Dark theme** throughout: `bg-zinc-900` base, `bg-zinc-800` cards, `border-white/5` or `border-white/10` borders, `text-zinc-200` primary text.
+- **Auth routing:** `db.ts` exports `setCurrentUser(uid | null)` — call this before updating React state when auth changes, so all subsequent DB calls use the correct backend immediately.
+- **Firebase env vars:** stored in `.env.local` (gitignored), prefixed with `VITE_FIREBASE_`. Must also be added to Vercel project settings for production.
 
 ---
 
@@ -130,8 +177,8 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 - [x] Edit logged meals (EditMealModal)
 - [x] PWA (installable, service worker)
 - [x] **Recipes feature** — create recipes from ingredients (AI parses macros), log a specific weight of a recipe with proportional macro calculation, edit and delete recipes
-- [x] **Production Deployment** — Hosted on Vercel, successfully installed as a mobile app on Vivo/Android.
-- [x] **Firebase Auth + Cloud Sync** — Google Sign-In, Firestore backend, transparent routing layer in db.ts, one-time IDB→Firestore merge on first sign-in. Guest mode (IDB) still works when not signed in.
+- [x] **Production Deployment** — Hosted on Vercel (`meal-tracker-v2-lzvh.vercel.app`), installed as a mobile PWA on Android
+- [x] **Firebase Auth + Cloud Sync** — Google Sign-In via popup, Firestore cloud storage, transparent routing layer in `db.ts`, one-time IDB→Firestore merge on first sign-in, guest mode (IDB) still works when not signed in
 
 ---
 
@@ -139,12 +186,7 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 
 > Update this section at the end of each session.
 
-### 🟡 Firebase Auth — Pending: Vercel env vars + authorized domain
-Implementation is complete and builds successfully. Two manual steps remain before it works in production:
-1. Add env vars to Vercel project settings (see list in `.env.local`)
-2. Add Vercel domain to Firebase Auth → Settings → Authorized domains
-
-### Backlog (after Firebase)
+### Backlog
 - [ ] Add data visualization (e.g., 7-day calorie trend chart on Home or History)
 - [ ] Add "Quick Add" buttons for common items (water, coffee)
 - [ ] Implement automated weekly summary reports via Gemini
@@ -161,3 +203,9 @@ npm run build     # production build
 ```
 
 The user provides their own Gemini API key in the Settings page of the app.
+
+## Firebase Project
+- **Project:** Neil - Tracker (`meal-tracker-87910`)
+- **Firestore rules:** users can only read/write their own `/users/{uid}/` subtree
+- **Authorized domains:** `meal-tracker-v2-lzvh.vercel.app`, `localhost`
+- **Env vars:** in `.env.local` (gitignored) — must be duplicated in Vercel project settings
