@@ -1,5 +1,6 @@
-import { getSettings, getMealsByDate, getAllMeals, getAllRecipes, type RecipeIngredient } from './db';
+import { getSettings, getMealsByDate, getAllMeals, getAllRecipes, type RecipeIngredient, type UserSettings } from './db';
 import { format, subDays } from 'date-fns';
+import { findFood, type FoodItem } from './food-db';
 
 export interface ParsedMeal {
     food: string;
@@ -21,20 +22,44 @@ export type AIResponse =
     | { type: 'recipe_log'; name: string; weight: number }
     | { type: 'error'; message: string };
 
-async function callGemini(apiKey: string, prompt: string): Promise<string> {
+const PROVIDER_CONFIG = {
+    openai: {
+        url: 'https://api.openai.com/v1/chat/completions',
+        model: 'gpt-4o-mini',
+        visionModel: 'gpt-4o-mini',
+    },
+    groq: {
+        url: 'https://api.groq.com/openai/v1/chat/completions',
+        model: 'llama-3.3-70b-versatile',
+        visionModel: 'llama-3.2-11b-vision-preview',
+    },
+};
+
+async function callGeminiAPI(
+    apiKey: string,
+    prompt: string,
+    image?: { base64: string; mimeType: string }
+): Promise<string> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const parts: any[] = [];
+    if (image) {
+        parts.push({ inline_data: { mime_type: image.mimeType, data: image.base64 } });
+    }
+    parts.push({ text: prompt });
+
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
+            contents: [{ parts }],
             generationConfig: { temperature: 0.1 },
         }),
     });
 
     if (!response.ok) {
         const err = await response.text();
-        console.error('Gemini API error body:', err);
+        console.error('Gemini API error:', err);
+        if (response.status === 401 || response.status === 403) throw new Error('api_auth_error');
         throw new Error(`Gemini API error: ${response.status}`);
     }
 
@@ -42,6 +67,146 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     return raw.replace(/```json/g, '').replace(/```/g, '').trim();
 }
+
+async function callOpenAICompatible(
+    apiKey: string,
+    prompt: string,
+    provider: 'openai' | 'groq',
+    image?: { base64: string; mimeType: string }
+): Promise<string> {
+    const config = PROVIDER_CONFIG[provider];
+    const model = image ? config.visionModel : config.model;
+    const content: any = image
+        ? [
+            { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.base64}` } },
+            { type: 'text', text: prompt },
+          ]
+        : prompt;
+
+    const response = await fetch(config.url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content }],
+            temperature: 0.1,
+        }),
+    });
+
+    if (!response.ok) {
+        const err = await response.text();
+        console.error(`${provider} API error:`, err);
+        if (response.status === 401 || response.status === 403) throw new Error('api_auth_error');
+        throw new Error(`${provider} API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const raw = data.choices?.[0]?.message?.content || '';
+    return raw.replace(/```json/g, '').replace(/```/g, '').trim();
+}
+
+async function callLLM(
+    apiKey: string,
+    prompt: string,
+    provider: 'gemini' | 'openai' | 'groq',
+    image?: { base64: string; mimeType: string }
+): Promise<string> {
+    if (provider === 'gemini') {
+        return callGeminiAPI(apiKey, prompt, image);
+    }
+    return callOpenAICompatible(apiKey, prompt, provider, image);
+}
+
+/**
+ * Client-side quantity parser — no LLM needed.
+ * Handles: "2 roti", "100g rice", "1 bowl dal", "2 tbsp ghee", "250ml milk", etc.
+ * Returns null if the quantity pattern isn't recognised.
+ */
+function parseQuantityNoLLM(
+    input: string,
+    food: FoodItem,
+    settings: UserSettings
+): ParsedMeal | null {
+    const text = input.toLowerCase();
+    let amount = 0;
+
+    const weightMatch  = text.match(/(\d+\.?\d*)\s*(?:gms?\b|g(?:ram)?s?\b)/i);
+    const volumeMatch  = text.match(/(\d+\.?\d*)\s*ml\b/);
+    const bowlMatch    = text.match(/(\d+\.?\d*)\s*bowls?\b/);
+    const tbspMatch    = text.match(/(\d+\.?\d*)\s*(?:tbsp|tablespoon)s?\b/);
+    const tspMatch     = text.match(/(\d+\.?\d*)\s*(?:tsp|teaspoon)s?\b/);
+    const countMatch   = food.defaultServing ? (text.match(/^(\d+)\b/) ?? text.match(/\b(\d+)$/)) : null;
+
+    if      (weightMatch) amount = parseFloat(weightMatch[1]);
+    else if (volumeMatch) amount = parseFloat(volumeMatch[1]);
+    else if (bowlMatch)   amount = parseFloat(bowlMatch[1]) * (food.unit === 'ml' ? settings.unitBowlLiquid : settings.unitBowlSolid);
+    else if (tbspMatch)   amount = parseFloat(tbspMatch[1]) * settings.unitTbsp;
+    else if (tspMatch)    amount = parseFloat(tspMatch[1]) * settings.unitTsp;
+    else if (countMatch)  amount = parseFloat(countMatch[1]) * food.defaultServing!;
+
+    if (!amount) return null;
+
+    const ratio = amount / 100;
+    return {
+        food: input,
+        calories: Math.round(food.per100 * ratio),
+        protein: Math.round(food.protein * ratio),
+        fat: Math.round(food.fat * ratio),
+        carbs: Math.round(food.carbs * ratio),
+        fiber: Math.round(food.fiber * ratio),
+    };
+}
+
+function parseMealData(parsed: any, fallbackFood: string): ParsedMeal {
+    return {
+        food: parsed.food || fallbackFood,
+        calories: parseInt(parsed.calories) || 0,
+        protein: parseInt(parsed.protein) || 0,
+        fat: parseInt(parsed.fat) || 0,
+        carbs: parseInt(parsed.carbs) || 0,
+        fiber: parseInt(parsed.fiber) || 0,
+    };
+}
+
+export const processLabelImage = async (
+    imageBase64: string,
+    mimeType: string,
+    quantity: string
+): Promise<AIResponse> => {
+    const settings = await getSettings();
+    const { apiKey, provider } = settings;
+
+    if (!apiKey) return { type: 'error', message: 'add_api_key' };
+
+    const prompt = `The image shows a nutritional label on a food package.
+The user consumed: ${quantity}
+
+1. Read the nutritional table from the label.
+2. Identify the reference quantity (per 100g, per 100ml, per serving, etc.).
+3. Calculate proportional values for what the user consumed.
+4. Respond ONLY with JSON:
+{"type":"meal","food":"product name + ${quantity}","calories":n,"protein":n,"fat":n,"carbs":n,"fiber":n}
+All values as integers.`;
+
+    try {
+        const raw = await callLLM(apiKey, prompt, provider, { base64: imageBase64, mimeType });
+        const parsed = JSON.parse(raw);
+        if (parsed.type === 'meal') {
+            return { type: 'meal', data: parseMealData(parsed, `Food (${quantity})`) };
+        }
+        return { type: 'error', message: 'Could not read the nutrition label. Please try again.' };
+    } catch (error: any) {
+        console.error('processLabelImage error:', error);
+        if (error?.message === 'api_auth_error') return { type: 'error', message: `invalid_key_${provider}` };
+        if (provider === 'groq') {
+            return { type: 'error', message: 'Image scanning is not available on Groq. Switch to Gemini or OpenAI in Settings.' };
+        }
+        return { type: 'error', message: 'Could not process the image. Please try again.' };
+    }
+};
 
 export const parseIngredients = async (text: string): Promise<RecipeIngredient[] | null> => {
     const settings = await getSettings();
@@ -61,7 +226,7 @@ Use standard nutritional databases for accuracy.
 Text: ${text}`;
 
     try {
-        const raw = await callGemini(settings.apiKey, prompt);
+        const raw = await callLLM(settings.apiKey, prompt, settings.provider);
         const parsed = JSON.parse(raw);
         if (parsed.type === 'ingredients' && Array.isArray(parsed.items)) {
             return parsed.items.map((item: any) => ({
@@ -82,13 +247,38 @@ Text: ${text}`;
 
 export const processInput = async (input: string): Promise<AIResponse> => {
     const settings = await getSettings();
-    const apiKey = settings.apiKey;
+    const { apiKey, provider } = settings;
 
-    if (!apiKey) {
-        return { type: 'error', message: 'No API key set. Please add your Gemini API key in Settings.' };
+    // Feature B + E: Try food DB first — works without an API key for parseable quantities
+    const dbFood = findFood(input);
+    if (dbFood && !apiKey) {
+        const direct = parseQuantityNoLLM(input, dbFood, settings);
+        if (direct) return { type: 'meal', data: direct };
+        return { type: 'error', message: 'qty_needs_key' };
     }
 
+    if (!apiKey) return { type: 'error', message: 'add_api_key' };
+
     try {
+        // Feature B: DB-matched foods use a short LLM call (saves ~70% tokens)
+        if (dbFood) {
+            try {
+                const shortPrompt = `The user said: "${input}".
+I know this food: ${dbFood.name} has ${dbFood.per100} kcal per 100${dbFood.unit}, ${dbFood.protein}g protein, ${dbFood.fat}g fat, ${dbFood.carbs}g carbs, ${dbFood.fiber}g fiber per 100${dbFood.unit}.
+User portion sizes: bowl (liquid) ${settings.unitBowlLiquid}ml, bowl (solid) ${settings.unitBowlSolid}g, tbsp ${settings.unitTbsp}g, tsp ${settings.unitTsp}g.
+Parse the quantity they consumed and return ONLY valid JSON:
+{"type":"meal","food":"food name + quantity description","calories":n,"protein":n,"fat":n,"carbs":n,"fiber":n}
+All values as integers.`;
+                const raw = await callLLM(apiKey, shortPrompt, provider);
+                const parsed = JSON.parse(raw);
+                if (parsed.type === 'meal') {
+                    return { type: 'meal', data: parseMealData(parsed, input) };
+                }
+            } catch {
+                // Fall through to full LLM call
+            }
+        }
+
         const today = format(new Date(), 'yyyy-MM-dd');
         const [todayMeals, allRecipes] = await Promise.all([
             getMealsByDate(today),
@@ -112,7 +302,10 @@ export const processInput = async (input: string): Promise<AIResponse> => {
             ? allRecipes.map(r => `${r.name} (${r.totalWeight}g total)`).join(', ')
             : 'None';
 
+        // Feature C: Priority rule for user-stated nutritional values is in the prompt
         const systemPrompt = `You are a nutrition assistant in a personal meal tracker app. The user tracks Indian and general food.
+
+PRIORITY RULE: If the user explicitly states their own nutritional values (e.g. "had X, it had 70 cal, 2g protein"), extract and use THOSE EXACT VALUES. Do not override or adjust with your own nutritional knowledge. User-stated values always take priority.
 
 Your job — determine the user's intent and respond with the correct JSON format:
 
@@ -153,23 +346,10 @@ Respond ONLY with valid JSON. No markdown, no explanation outside JSON. All nutr
 
 User says: ${input}`;
 
-        const raw = await callGemini(apiKey, systemPrompt);
+        const raw = await callLLM(apiKey, systemPrompt, provider);
         const parsed = JSON.parse(raw);
 
-        if (parsed.type === 'meal') {
-            return {
-                type: 'meal',
-                data: {
-                    food: parsed.food || input,
-                    calories: parseInt(parsed.calories) || 0,
-                    protein: parseInt(parsed.protein) || 0,
-                    fat: parseInt(parsed.fat) || 0,
-                    carbs: parseInt(parsed.carbs) || 0,
-                    fiber: parseInt(parsed.fiber) || 0,
-                },
-            };
-        }
-
+        if (parsed.type === 'meal') return { type: 'meal', data: parseMealData(parsed, input) };
         if (parsed.type === 'favourite_save') return { type: 'favourite_save', name: parsed.name };
         if (parsed.type === 'favourite_log') return { type: 'favourite_log', name: parsed.name };
         if (parsed.type === 'weight') return { type: 'weight', weight: parseFloat(parsed.weight) || 0 };
@@ -179,8 +359,9 @@ User says: ${input}`;
         if (parsed.type === 'chat') return { type: 'chat', message: parsed.message };
 
         throw new Error('Unexpected response format');
-    } catch (error) {
+    } catch (error: any) {
         console.error('processInput error:', error);
+        if (error?.message === 'api_auth_error') return { type: 'error', message: `invalid_key_${provider}` };
         return { type: 'error', message: 'Something went wrong. Please try again.' };
     }
 };
@@ -213,7 +394,7 @@ export const getMealSuggestion = async (): Promise<string | null> => {
 
 Suggest ONE simple Indian or general meal that helps fill the biggest gap. Keep it to 1-2 sentences. Be specific with the food item. Do not wrap in JSON — just plain text.`;
 
-        return await callGemini(settings.apiKey, prompt);
+        return await callLLM(settings.apiKey, prompt, settings.provider);
     } catch (error) {
         console.error('getMealSuggestion error:', error);
         return null;
@@ -250,7 +431,7 @@ Goals: ${settings.dailyCalories} kcal, ${settings.dailyProtein}g protein, ${sett
 
 Give 1-2 brief, actionable observations about patterns you notice (e.g., "Your protein dips on weekends", "Fiber has been consistently low"). Be encouraging but honest. Keep it to 2-3 sentences total. Plain text only, no JSON.`;
 
-        return await callGemini(settings.apiKey, prompt);
+        return await callLLM(settings.apiKey, prompt, settings.provider);
     } catch (error) {
         console.error('getSmartObservations error:', error);
         return null;

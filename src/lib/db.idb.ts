@@ -57,6 +57,7 @@ export interface WeightEntry {
 
 export interface UserSettings {
     apiKey: string;
+    provider: 'gemini' | 'openai' | 'groq';
     dailyCalories: number;
     dailyProtein: number;
     dailyCarbs: number;
@@ -72,6 +73,7 @@ export interface UserSettings {
 
 export const DEFAULT_SETTINGS: UserSettings = {
     apiKey: '',
+    provider: 'gemini',
     dailyCalories: 2000,
     dailyProtein: 120,
     dailyCarbs: 250,

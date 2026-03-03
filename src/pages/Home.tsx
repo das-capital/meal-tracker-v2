@@ -10,15 +10,15 @@ import { EditMealModal } from '../components/EditMealModal';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 
-interface MacroBarProps { label: string; value: number; goal: number; color: string }
+interface MacroBarProps { label: string; value: number; goal: number; color: string; unit?: string }
 
-const MacroBar = ({ label, value, goal, color }: MacroBarProps) => {
+const MacroBar = ({ label, value, goal, color, unit = 'g' }: MacroBarProps) => {
     const pct = goal > 0 ? Math.min((value / goal) * 100, 100) : 0;
     return (
         <div className="flex flex-col gap-1">
             <div className="flex justify-between text-xs text-zinc-400">
                 <span className="font-medium">{label}</span>
-                <span>{value}g <span className="text-zinc-600">/ {goal}g</span></span>
+                <span>{value}{unit} <span className="text-zinc-600">/ {goal}{unit}</span></span>
             </div>
             <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
                 <div className={clsx('h-full rounded-full transition-all duration-500', color)} style={{ width: `${pct}%` }} />
@@ -93,6 +93,7 @@ export const Home = () => {
 
             {/* Macro Bars */}
             <div className="bg-zinc-800/60 border border-white/5 rounded-2xl p-4 flex flex-col gap-3 mb-4">
+                <MacroBar label="Calories" value={stats.calories} goal={GOAL_CALS} color="bg-emerald-500" unit=" kcal" />
                 <MacroBar label="Protein" value={stats.protein} goal={settings?.dailyProtein || 120} color="bg-blue-400" />
                 <MacroBar label="Carbs" value={stats.carbs} goal={settings?.dailyCarbs || 250} color="bg-amber-400" />
                 <MacroBar label="Fiber" value={stats.fiber} goal={settings?.dailyFiber || 30} color="bg-emerald-400" />

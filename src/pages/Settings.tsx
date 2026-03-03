@@ -1,11 +1,12 @@
 import { motion } from 'framer-motion';
-import { ArrowLeft, Save, Key, Target, Ruler, Trash2, AlertTriangle, Download, User, Cloud } from 'lucide-react';
+import { ArrowLeft, Save, Key, Target, Ruler, Trash2, AlertTriangle, Download, User, Cloud, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../hooks/useSettings';
 import { resetAllData, getAllMeals } from '../lib/db';
 import { useState } from 'react';
 import { AuthButton } from '../components/AuthButton';
 import { useAuth } from '../contexts/AuthContext';
+import clsx from 'clsx';
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="flex flex-col gap-1.5">
@@ -15,6 +16,24 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
 );
 
 const inputCls = "bg-zinc-900/50 rounded-xl border border-white/10 p-3 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm w-full";
+
+const PROVIDER_LABELS = {
+    gemini: 'Google Gemini',
+    openai: 'OpenAI',
+    groq: 'Groq',
+} as const;
+
+const PROVIDER_LINKS = {
+    gemini: 'https://aistudio.google.com',
+    openai: 'https://platform.openai.com/api-keys',
+    groq: 'https://console.groq.com',
+} as const;
+
+const PROVIDER_PLACEHOLDERS = {
+    gemini: 'AIza...',
+    openai: 'sk-...',
+    groq: 'gsk_...',
+} as const;
 
 export const SettingsPage = () => {
     const navigate = useNavigate();
@@ -46,6 +65,8 @@ export const SettingsPage = () => {
     };
 
     if (loading || !settings) return <div className="p-8 text-zinc-400">Loading...</div>;
+
+    const provider = settings.provider || 'gemini';
 
     return (
         <motion.div
@@ -79,20 +100,51 @@ export const SettingsPage = () => {
                     </p>
                 </section>
 
-                {/* Gemini API Key */}
+                {/* AI Provider */}
                 <section className="space-y-3">
                     <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
-                        <Key className="w-3.5 h-3.5" /> Gemini API Key
+                        <Zap className="w-3.5 h-3.5" /> AI Provider
                     </h2>
-                    <Field label="API Key (from aistudio.google.com)">
+                    <div className="grid grid-cols-3 gap-1 bg-zinc-900/50 rounded-xl border border-white/10 p-1">
+                        {(['gemini', 'openai', 'groq'] as const).map(p => (
+                            <button
+                                key={p}
+                                onClick={() => updateSetting('provider', p)}
+                                className={clsx(
+                                    'py-2 rounded-lg text-xs font-medium transition-all',
+                                    provider === p
+                                        ? 'bg-emerald-500 text-zinc-900'
+                                        : 'text-zinc-400 hover:text-zinc-200'
+                                )}
+                            >
+                                {PROVIDER_LABELS[p]}
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
+                {/* API Key — provider-specific */}
+                <section className="space-y-3">
+                    <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                        <Key className="w-3.5 h-3.5" /> {PROVIDER_LABELS[provider]} API Key
+                    </h2>
+                    <Field label={`API Key`}>
                         <input
                             type="password"
                             value={settings.apiKey}
                             onChange={e => updateSetting('apiKey', e.target.value)}
-                            placeholder="AIza..."
+                            placeholder={PROVIDER_PLACEHOLDERS[provider]}
                             className={inputCls}
                         />
                     </Field>
+                    <a
+                        href={PROVIDER_LINKS[provider]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-emerald-400 underline"
+                    >
+                        Get {PROVIDER_LABELS[provider]} API key →
+                    </a>
                 </section>
 
                 {/* Daily Goals */}
