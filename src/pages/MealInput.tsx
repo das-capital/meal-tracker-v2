@@ -11,6 +11,7 @@ import { RecipesPanel } from '../components/RecipesPanel';
 import { format } from 'date-fns';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ChatMessage {
     id: number;
@@ -44,6 +45,7 @@ function saveTodayChat(messages: ChatMessage[]) {
 export const MealInput = () => {
     const { addMeal, meals, refreshMeals } = useMeals();
     const { settings, updateSetting } = useSettings();
+    const { user, signIn } = useAuth();
     const navigate = useNavigate();
     const [messages, setMessages] = useState<ChatMessage[]>(loadTodayChat);
     const [input, setInput] = useState('');
@@ -272,7 +274,8 @@ export const MealInput = () => {
         }());
     };
 
-    const showOnboarding = settings && !settings.apiKey;
+    // Signed-in users get hosted AI — no onboarding needed
+    const showOnboarding = !!settings && !settings.apiKey && !user;
 
     return (
         <motion.div
@@ -499,6 +502,30 @@ export const MealInput = () => {
                                             className="text-xs text-red-400 underline mt-1 ml-6"
                                         >
                                             Go to Settings →
+                                        </button>
+                                    </div>
+                                ) : msg.text === 'hosted_limit_exceeded' ? (
+                                    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
+                                        <div className="flex items-start gap-2">
+                                            <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                                            <p className="text-sm text-red-300">
+                                                You've used your 30 free AI requests today. Add your own API key in Settings to continue.
+                                            </p>
+                                        </div>
+                                        <button onClick={() => navigate('/settings')} className="text-xs text-red-400 underline mt-1 ml-6">
+                                            Go to Settings →
+                                        </button>
+                                    </div>
+                                ) : msg.text === 'sign_in_for_hosted_key' ? (
+                                    <div className="bg-zinc-800 border border-white/10 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
+                                        <div className="flex items-start gap-2">
+                                            <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                                            <p className="text-sm text-zinc-300">
+                                                Sign in with Google for 30 free AI requests/day — no API key needed.
+                                            </p>
+                                        </div>
+                                        <button onClick={signIn} className="text-xs text-emerald-400 underline mt-1 ml-6">
+                                            Sign in →
                                         </button>
                                     </div>
                                 ) : (

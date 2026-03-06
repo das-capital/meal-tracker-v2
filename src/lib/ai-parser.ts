@@ -1,6 +1,7 @@
 import { getSettings, getMealsByDate, getAllMeals, getAllRecipes, type RecipeIngredient, type UserSettings } from './db';
 import { format, subDays } from 'date-fns';
 import { findFood, type FoodItem } from './food-db';
+import { auth } from './firebase';
 
 export interface ParsedMeal {
     food: string;
@@ -120,6 +121,23 @@ async function callLLM(
     return callOpenAICompatible(apiKey, prompt, provider, image);
 }
 
+async function callHostedLLM(
+    prompt: string,
+    image?: { base64: string; mimeType: string }
+): Promise<string> {
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) throw new Error('not_signed_in');
+    const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ prompt, image }),
+    });
+    if (res.status === 429) throw new Error('hosted_limit_exceeded');
+    if (!res.ok) throw new Error(`proxy_error_${res.status}`);
+    const data = await res.json();
+    return data.text as string;
+}
+
 /**
  * Client-side quantity parser — no LLM needed.
  * Handles: "2 roti", "100g rice", "1 bowl dal", "2 tbsp ghee", "250ml milk", etc.
@@ -178,8 +196,9 @@ export const processLabelImage = async (
 ): Promise<AIResponse> => {
     const settings = await getSettings();
     const { apiKey, provider } = settings;
+    const useHosted = !apiKey && !!auth.currentUser;
 
-    if (!apiKey) return { type: 'error', message: 'add_api_key' };
+    if (!apiKey && !auth.currentUser) return { type: 'error', message: 'sign_in_for_hosted_key' };
 
     const prompt = `The image shows a nutritional label on a food package.
 The user consumed: ${quantity}
@@ -192,7 +211,9 @@ The user consumed: ${quantity}
 All values as integers.`;
 
     try {
-        const raw = await callLLM(apiKey, prompt, provider, { base64: imageBase64, mimeType });
+        const raw = useHosted
+            ? await callHostedLLM(prompt, { base64: imageBase64, mimeType })
+            : await callLLM(apiKey, prompt, provider, { base64: imageBase64, mimeType });
         const parsed = JSON.parse(raw);
         if (parsed.type === 'meal') {
             return { type: 'meal', data: parseMealData(parsed, `Food (${quantity})`) };
@@ -200,8 +221,10 @@ All values as integers.`;
         return { type: 'error', message: 'Could not read the nutrition label. Please try again.' };
     } catch (error: any) {
         console.error('processLabelImage error:', error);
+        if (error?.message === 'hosted_limit_exceeded') return { type: 'error', message: 'hosted_limit_exceeded' };
+        if (error?.message === 'not_signed_in') return { type: 'error', message: 'sign_in_for_hosted_key' };
         if (error?.message === 'api_auth_error') return { type: 'error', message: `invalid_key_${provider}` };
-        if (provider === 'groq') {
+        if (!useHosted && provider === 'groq') {
             return { type: 'error', message: 'Image scanning is not available on Groq. Switch to Gemini or OpenAI in Settings.' };
         }
         return { type: 'error', message: 'Could not process the image. Please try again.' };
@@ -249,15 +272,22 @@ export const processInput = async (input: string): Promise<AIResponse> => {
     const settings = await getSettings();
     const { apiKey, provider } = settings;
 
-    // Feature B + E: Try food DB first — works without an API key for parseable quantities
+    // Feature B + E: Try food DB first — works without any LLM for parseable quantities
     const dbFood = findFood(input);
-    if (dbFood && !apiKey) {
+    if (dbFood) {
         const direct = parseQuantityNoLLM(input, dbFood, settings);
         if (direct) return { type: 'meal', data: direct };
-        return { type: 'error', message: 'qty_needs_key' };
+        // ambiguous quantity — fall through to LLM
     }
 
-    if (!apiKey) return { type: 'error', message: 'add_api_key' };
+    const useHosted = !apiKey && !!auth.currentUser;
+    if (!apiKey && !auth.currentUser) {
+        return { type: 'error', message: dbFood ? 'qty_needs_key' : 'sign_in_for_hosted_key' };
+    }
+
+    // Local helper that picks the right transport for this call
+    const llm = (p: string, img?: { base64: string; mimeType: string }) =>
+        useHosted ? callHostedLLM(p, img) : callLLM(apiKey, p, provider, img);
 
     try {
         // Feature B: DB-matched foods use a short LLM call (saves ~70% tokens)
@@ -269,13 +299,15 @@ User portion sizes: bowl (liquid) ${settings.unitBowlLiquid}ml, bowl (solid) ${s
 Parse the quantity they consumed and return ONLY valid JSON:
 {"type":"meal","food":"food name + quantity description","calories":n,"protein":n,"fat":n,"carbs":n,"fiber":n}
 All values as integers.`;
-                const raw = await callLLM(apiKey, shortPrompt, provider);
+                const raw = await llm(shortPrompt);
                 const parsed = JSON.parse(raw);
                 if (parsed.type === 'meal') {
                     return { type: 'meal', data: parseMealData(parsed, input) };
                 }
-            } catch {
-                // Fall through to full LLM call
+            } catch (e: any) {
+                // Re-throw hosted errors so the outer catch handles them correctly
+                if (e?.message === 'hosted_limit_exceeded' || e?.message === 'not_signed_in') throw e;
+                // Otherwise fall through to full LLM call
             }
         }
 
@@ -346,7 +378,7 @@ Respond ONLY with valid JSON. No markdown, no explanation outside JSON. All nutr
 
 User says: ${input}`;
 
-        const raw = await callLLM(apiKey, systemPrompt, provider);
+        const raw = await llm(systemPrompt);
         const parsed = JSON.parse(raw);
 
         if (parsed.type === 'meal') return { type: 'meal', data: parseMealData(parsed, input) };
@@ -361,6 +393,8 @@ User says: ${input}`;
         throw new Error('Unexpected response format');
     } catch (error: any) {
         console.error('processInput error:', error);
+        if (error?.message === 'hosted_limit_exceeded') return { type: 'error', message: 'hosted_limit_exceeded' };
+        if (error?.message === 'not_signed_in') return { type: 'error', message: 'sign_in_for_hosted_key' };
         if (error?.message === 'api_auth_error') return { type: 'error', message: `invalid_key_${provider}` };
         return { type: 'error', message: 'Something went wrong. Please try again.' };
     }
@@ -368,7 +402,8 @@ User says: ${input}`;
 
 export const getMealSuggestion = async (): Promise<string | null> => {
     const settings = await getSettings();
-    if (!settings.apiKey) return null;
+    const useHosted = !settings.apiKey && !!auth.currentUser;
+    if (!settings.apiKey && !auth.currentUser) return null;
 
     try {
         const today = format(new Date(), 'yyyy-MM-dd');
@@ -394,16 +429,20 @@ export const getMealSuggestion = async (): Promise<string | null> => {
 
 Suggest ONE simple Indian or general meal that helps fill the biggest gap. Keep it to 1-2 sentences. Be specific with the food item. Do not wrap in JSON — just plain text.`;
 
-        return await callLLM(settings.apiKey, prompt, settings.provider);
-    } catch (error) {
+        return useHosted
+            ? await callHostedLLM(prompt)
+            : await callLLM(settings.apiKey, prompt, settings.provider);
+    } catch (error: any) {
         console.error('getMealSuggestion error:', error);
+        // Suggestions are optional — swallow hosted limit errors silently
         return null;
     }
 };
 
 export const getSmartObservations = async (): Promise<string | null> => {
     const settings = await getSettings();
-    if (!settings.apiKey) return null;
+    const useHosted = !settings.apiKey && !!auth.currentUser;
+    if (!settings.apiKey && !auth.currentUser) return null;
 
     try {
         const allMeals = await getAllMeals();
@@ -431,9 +470,12 @@ Goals: ${settings.dailyCalories} kcal, ${settings.dailyProtein}g protein, ${sett
 
 Give 1-2 brief, actionable observations about patterns you notice (e.g., "Your protein dips on weekends", "Fiber has been consistently low"). Be encouraging but honest. Keep it to 2-3 sentences total. Plain text only, no JSON.`;
 
-        return await callLLM(settings.apiKey, prompt, settings.provider);
-    } catch (error) {
+        return useHosted
+            ? await callHostedLLM(prompt)
+            : await callLLM(settings.apiKey, prompt, settings.provider);
+    } catch (error: any) {
         console.error('getSmartObservations error:', error);
+        // Observations are optional — swallow hosted limit errors silently
         return null;
     }
 };

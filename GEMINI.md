@@ -1,9 +1,7 @@
 # Meal Tracker — AI Context
 
-> This file is identical to CLAUDE.md. Keep them in sync.
-> Claude Code reads CLAUDE.md automatically on session start.
-> For Gemini CLI: you may need to say "read GEMINI.md for project context" at the start of a session.
-> Update the "Progress & Next Steps" section at the end of every session (in both files).
+> Read this file at the start of every session to get full project context.
+> Update the "Progress & Next Steps" section at the end of every session.
 
 ---
 
@@ -162,9 +160,9 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 
 ---
 
-## Features Built (as of Feb 2026)
+## Features Built (as of Mar 2026)
 
-- [x] Chat-based meal logging with Gemini AI parsing
+- [x] Chat-based meal logging with AI parsing
 - [x] Voice input (Web Speech API)
 - [x] Today summary with macro rings / progress
 - [x] Meal history by date
@@ -173,14 +171,38 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 - [x] Height & age logging via chat
 - [x] User profile page
 - [x] Settings (API key, daily goals, portion unit sizes)
-- [x] Meal suggestion after logging (Gemini)
-- [x] Smart weekly observations (Gemini)
+- [x] Meal suggestion after logging
+- [x] Smart weekly observations
 - [x] Badges / achievements (BadgeBar)
 - [x] Edit logged meals (EditMealModal)
 - [x] PWA (installable, service worker)
 - [x] **Recipes feature** — create recipes from ingredients (AI parses macros), log a specific weight of a recipe with proportional macro calculation, edit and delete recipes
 - [x] **Production Deployment** — Hosted on Vercel (`meal-tracker-v2-lzvh.vercel.app`), installed as a mobile PWA on Android
 - [x] **Firebase Auth + Cloud Sync** — Google Sign-In via popup, Firestore cloud storage, transparent routing layer in `db.ts`, one-time IDB→Firestore merge on first sign-in, guest mode (IDB) still works when not signed in
+- [x] **Multi-provider LLM** — Gemini / OpenAI / Groq selector in Settings; unified `callLLM` dispatcher in `ai-parser.ts`; `settings.provider` field (default `'gemini'`); provider-specific invalid-key error messages
+- [x] **Bundled food DB** — ~100 Indian + general foods in `src/lib/food-db.ts` (Fuse.js, threshold 0.25); DB hits use a short LLM call for quantity parsing only (~70% token saving); works without API key for explicit quantities
+- [x] **Offline quantity parsing** — no API key needed for `"2 roti"`, `"150gm aloo gobhi"`, `"1 bowl dal"`, `"100g rice"` etc.; `defaultServing` per food enables piece-based counting; `gm`/`gms` unit supported
+- [x] **Smart fuzzy matching** — input normalisation (`aa→a`, double consonants, `ee→i` at word end) + quantity/verb prefix stripping before Fuse search; handles `aaloo gobhi`, `channa dal`, `gobhee`, `daal` etc.
+- [x] **Explicit value override** — PRIORITY RULE in system prompt: user-stated nutritional values (`"it had 70 cal, 2g protein"`) are always used as-is
+- [x] **Image label scanning** — Camera button → compress to 1024px JPEG → `processLabelImage` → vision API reads label + calculates proportional macros; image preview in chat bubble; Groq vision fallback error
+- [x] **API key onboarding** — Banner for new users (shown when `!settings.apiKey`) with guided Gemini/OpenAI/Groq setup inline
+- [x] **Contextual error messages** — three distinct no-key errors (`add_api_key`, `qty_needs_key`, `invalid_key_{provider}`), all with "Go to Settings →" link
+
+---
+
+## Food DB — Offline Quantity Patterns Supported
+
+| Pattern | Example |
+|---|---|
+| Count first | `2 roti`, `3 idli` |
+| Count last | `banana 2`, `roti 3` |
+| Grams | `100g rice`, `150gm aloo gobhi`, `150 grams dal` |
+| Millilitres | `250ml milk`, `200ml lassi` |
+| Bowl | `1 bowl dal`, `2 bowls curd` |
+| Tablespoon | `2 tbsp ghee` |
+| Teaspoon | `1 tsp ghee` |
+
+Anything vague (e.g. `"a handful of almonds"`) or not in DB → needs API key.
 
 ---
 
@@ -191,8 +213,8 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 ### Backlog
 - [ ] Add data visualization (e.g., 7-day calorie trend chart on Home or History)
 - [ ] Add "Quick Add" buttons for common items (water, coffee)
-- [ ] Implement automated weekly summary reports via Gemini
-- [ ] Improve AI error handling for very ambiguous food descriptions
+- [ ] Implement automated weekly summary reports
+- [ ] Barcode scanning via Open Food Facts API (pairs with existing camera flow)
 
 ---
 
