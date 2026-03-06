@@ -4,12 +4,17 @@ import * as admin from 'firebase-admin';
 let initialized = false;
 function getAdmin() {
     if (!initialized) {
-        admin.initializeApp({
-            credential: admin.credential.cert(
-                JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON!)
-            ),
-        });
-        initialized = true;
+        try {
+            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON!);
+            console.log('Initializing Firebase Admin with project_id:', serviceAccount.project_id);
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount),
+            });
+            initialized = true;
+        } catch (err) {
+            console.error('Firebase Admin init failed:', err);
+            throw err;
+        }
     }
     return admin;
 }
@@ -26,7 +31,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let uid: string;
     try {
         uid = (await getAdmin().auth().verifyIdToken(token)).uid;
-    } catch {
+    } catch (err) {
+        console.error('verifyIdToken failed:', err);
         return res.status(401).json({ error: 'Invalid token' });
     }
 
