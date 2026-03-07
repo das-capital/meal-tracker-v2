@@ -5,9 +5,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 function getAdminServices() {
     if (getApps().length === 0) {
-        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON!);
-        console.log('Initializing Firebase Admin, project_id:', serviceAccount.project_id);
-        initializeApp({ credential: cert(serviceAccount) });
+        initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON!)) });
     }
     return { auth: getAuth(), db: getFirestore() };
 }
