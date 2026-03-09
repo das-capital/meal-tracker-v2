@@ -42,7 +42,7 @@ export const useMeals = () => {
         refreshMeals();
     }, [refreshMeals]);
 
-    const addMeal = async (text: string, parsedData: any) => {
+    const addMeal = async (text: string, parsedData: any): Promise<number> => {
         const today = format(new Date(), 'yyyy-MM-dd');
         const meal = {
             date: today,
@@ -51,8 +51,9 @@ export const useMeals = () => {
             parsed: [parsedData],
             totalCalories: parsedData.calories,
         };
-        await addMealToDB(meal);
+        const id = await addMealToDB(meal);
         await refreshMeals();
+        return id as number;
     };
 
     return { meals: todayMeals, stats, loading, addMeal, refreshMeals };

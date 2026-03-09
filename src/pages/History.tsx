@@ -198,7 +198,14 @@ export const History = () => {
     const toggleDay = (date: string) => setExpandedDays(prev => ({ ...prev, [date]: !prev[date] }));
 
     const handleDelete = async (id: number) => {
-        if (window.confirm('Delete this meal?')) { await deleteMeal(id); loadData(); }
+        if (!window.confirm('Delete this meal?')) return;
+        try {
+            await deleteMeal(id);
+        } catch {
+            alert('Could not delete. Please try again.');
+        } finally {
+            loadData();
+        }
     };
 
     return (

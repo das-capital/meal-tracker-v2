@@ -1,7 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, runTransaction } from 'firebase-admin/firestore';
+
+const MAX_PROMPT = 20_000;
+const MAX_IMAGE  = 4_000_000;
 
 function getAdminServices() {
     if (getApps().length === 0) {
@@ -14,6 +17,9 @@ const DAILY_LIMIT = 30;
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+    res.setHeader('Access-Control-Allow-Origin', 'https://meal-tracker-v2-lzvh.vercel.app');
+    res.setHeader('Access-Control-Allow-Methods', 'POST');
+    if (req.method === 'OPTIONS') { res.status(204).end(); return; }
     if (req.method !== 'POST') return res.status(405).end();
 
     // 1. Verify Firebase ID token
@@ -29,18 +35,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(401).json({ error: 'Invalid token' });
     }
 
-    // 2. Rate limit check
-    const { db } = getAdminServices();
-    const usageRef = db.doc(`users/${uid}/usage/${today()}`);
-    const snap = await usageRef.get();
-    const count: number = snap.exists ? (snap.data()?.hostedKeyCount ?? 0) : 0;
-    if (count >= DAILY_LIMIT) {
-        return res.status(429).json({ error: 'hosted_limit_exceeded', used: count, limit: DAILY_LIMIT });
-    }
-
-    // 3. Call Gemini
+    // 2. Validate request sizes
     const { prompt, image } = req.body as { prompt: string; image?: { base64: string; mimeType: string } };
     if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
+    if (typeof prompt === 'string' && prompt.length > MAX_PROMPT)
+        return res.status(400).json({ error: 'prompt_too_long' });
+    if (image && typeof image.base64 === 'string' && image.base64.length > MAX_IMAGE)
+        return res.status(400).json({ error: 'image_too_large' });
+    if (image && !['image/jpeg', 'image/png', 'image/webp'].includes(image.mimeType))
+        return res.status(400).json({ error: 'invalid_mime_type' });
+
+    // 3. Atomic rate limit check-and-increment
+    const { db } = getAdminServices();
+    const usageRef = db.doc(`users/${uid}/usage/${today()}`);
+    let count: number;
+    try {
+        count = await runTransaction(db, async (t) => {
+            const snap = await t.get(usageRef);
+            const current = (snap.data()?.hostedKeyCount ?? 0) as number;
+            if (current >= DAILY_LIMIT) throw new Error('limit_exceeded');
+            t.set(usageRef, { hostedKeyCount: current + 1 }, { merge: true });
+            return current;
+        });
+    } catch (err: any) {
+        if (err.message === 'limit_exceeded') {
+            return res.status(429).json({ error: 'hosted_limit_exceeded', limit: DAILY_LIMIT });
+        }
+        throw err;
+    }
+
+    // 4. Call Gemini
 
     const parts: unknown[] = [];
     if (image) parts.push({ inline_data: { mime_type: image.mimeType, data: image.base64 } });
@@ -59,9 +83,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const geminiData = await geminiRes.json();
     const raw: string = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     const text = raw.replace(/```json/g, '').replace(/```/g, '').trim();
-
-    // 4. Increment usage (only after successful call)
-    await usageRef.set({ hostedKeyCount: FieldValue.increment(1) }, { merge: true });
 
     return res.status(200).json({ text, used: count + 1, limit: DAILY_LIMIT });
 }

@@ -9,6 +9,7 @@ import { SettingsPage } from './pages/Settings';
 import { Profile } from './pages/Profile';
 import { BottomNav } from './components/BottomNav';
 import { BadgeBar } from './components/BadgeBar';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAuth } from './contexts/AuthContext';
 
 function Layout() {
@@ -64,9 +65,11 @@ function Layout() {
 
 function App() {
     return (
-        <BrowserRouter>
-            <Layout />
-        </BrowserRouter>
+        <ErrorBoundary>
+            <BrowserRouter>
+                <Layout />
+            </BrowserRouter>
+        </ErrorBoundary>
     );
 }
 

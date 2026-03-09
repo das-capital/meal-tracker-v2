@@ -38,9 +38,12 @@ export const Home = () => {
     useEffect(() => {
         const loadObservations = async () => {
             setLoadingObs(true);
-            const obs = await getSmartObservations();
-            setObservation(obs);
-            setLoadingObs(false);
+            try {
+                const obs = await getSmartObservations();
+                setObservation(obs);
+            } finally {
+                setLoadingObs(false);
+            }
         };
         loadObservations();
     }, []);

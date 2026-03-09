@@ -187,6 +187,7 @@ The system prompt injects: today's meals, daily totals, goals, portion sizes, an
 - [x] **Image label scanning** — Camera button → compress to 1024px JPEG → `processLabelImage` → vision API reads label + calculates proportional macros; image preview in chat bubble; Groq vision fallback error
 - [x] **API key onboarding** — Banner for new users (shown when `!settings.apiKey`) with guided Gemini/OpenAI/Groq setup inline
 - [x] **Contextual error messages** — three distinct no-key errors (`add_api_key`, `qty_needs_key`, `invalid_key_{provider}`), all with "Go to Settings →" link
+- [x] **Barcode scanning** — ZXing real-time scanner (`@zxing/browser`), Open Food Facts lookup (no API key needed), proportional macro calculation by weight typed after scan
 
 ---
 
@@ -214,7 +215,7 @@ Anything vague (e.g. `"a handful of almonds"`) or not in DB → needs API key.
 - [ ] Add data visualization (e.g., 7-day calorie trend chart on Home or History)
 - [ ] Add "Quick Add" buttons for common items (water, coffee)
 - [ ] Implement automated weekly summary reports
-- [ ] Barcode scanning via Open Food Facts API (pairs with existing camera flow)
+- [ ] **Light/dark mode toggle** — proper Tailwind `darkMode: 'class'` approach: CSS custom property tokens in `index.css`, semantic color classes across all components (~10 files), toggle stored in settings, switcher in Settings page
 
 ---
 

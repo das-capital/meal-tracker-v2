@@ -7,3 +7,8 @@
     @apply bg-background text-zinc-100 font-sans antialiased overflow-hidden;
   }
 }
+
+@keyframes scan {
+    0%, 100% { top: 4px; }
+    50%       { top: calc(100% - 4px); }
+}

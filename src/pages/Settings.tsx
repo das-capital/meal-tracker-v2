@@ -2,8 +2,9 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, Save, Key, Target, Ruler, Trash2, AlertTriangle, Download, User, Cloud, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../hooks/useSettings';
-import { resetAllData, getAllMeals } from '../lib/db';
+import { resetAllData, getAllMeals, deleteMeal } from '../lib/db';
 import { useState } from 'react';
+import { subDays, format } from 'date-fns';
 import { AuthButton } from '../components/AuthButton';
 import { useAuth } from '../contexts/AuthContext';
 import clsx from 'clsx';
@@ -46,11 +47,25 @@ export const SettingsPage = () => {
         setTimeout(() => setSaved(false), 2000);
     };
 
-    const handleReset = async () => {
-        if (window.confirm('DANGER: Reset ALL data? This cannot be undone.')) {
+    const handleDeleteRange = async (days: number | 'all') => {
+        const label = days === 'all' ? 'ALL data' : `the last ${days === 1 ? '24 hours' : days === 7 ? '7 days' : '30 days'} of meals`;
+        if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
+        if (days === 'all') {
             await resetAllData();
             window.location.reload();
+            return;
         }
+        const cutoff = format(subDays(new Date(), days), 'yyyy-MM-dd');
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const meals = await getAllMeals();
+        const toDelete = meals.filter(m => m.date >= cutoff && m.date <= today);
+        try {
+            await Promise.all(toDelete.map(m => deleteMeal(m.id!)));
+        } catch {
+            alert('Some meals could not be deleted. Please check your connection and try again.');
+            return;
+        }
+        window.location.reload();
     };
 
     const handleExport = async () => {
@@ -252,8 +267,24 @@ export const SettingsPage = () => {
                     <h2 className="text-xs font-bold text-red-500 uppercase tracking-widest flex items-center gap-2">
                         <AlertTriangle className="w-3.5 h-3.5" /> Danger Zone
                     </h2>
+                    <p className="text-xs text-zinc-500">Delete meal history from a time range:</p>
+                    <div className="grid grid-cols-3 gap-2">
+                        {([
+                            { label: 'Last 24h', days: 1 },
+                            { label: 'Last 7 days', days: 7 },
+                            { label: 'Last 30 days', days: 30 },
+                        ] as const).map(({ label, days }) => (
+                            <button
+                                key={days}
+                                onClick={() => handleDeleteRange(days)}
+                                className="py-2 bg-red-500/10 border border-red-500/20 rounded-xl text-xs font-medium text-red-400 active:scale-95 transition-transform"
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
                     <button
-                        onClick={handleReset}
+                        onClick={() => handleDeleteRange('all')}
                         className="w-full h-12 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-center gap-2 font-medium text-red-500 active:scale-95 transition-transform"
                     >
                         <Trash2 className="w-4 h-4" />

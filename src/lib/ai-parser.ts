@@ -14,6 +14,7 @@ export interface ParsedMeal {
 
 export type AIResponse =
     | { type: 'meal'; data: ParsedMeal }
+    | { type: 'meal_list'; items: ParsedMeal[] }
     | { type: 'chat'; message: string }
     | { type: 'favourite_save'; name: string }
     | { type: 'favourite_log'; name: string }
@@ -341,8 +342,15 @@ PRIORITY RULE: If the user explicitly states their own nutritional values (e.g. 
 
 Your job — determine the user's intent and respond with the correct JSON format:
 
-1. LOGGING A MEAL: If the user describes eating something, extract nutritional info.
-   Respond: {"type":"meal","food":"descriptive name","calories":number,"protein":number,"carbs":number,"fat":number,"fiber":number}
+1. LOGGING A MEAL:
+   If the user describes ONE food item, respond:
+   {"type":"meal","food":"descriptive name","calories":number,"protein":number,"fat":number,"carbs":number,"fiber":number}
+
+   If the user describes MULTIPLE food items in one message, respond with a list — one object per food, each with its own macros (do NOT sum them together):
+   {"type":"meal_list","items":[
+     {"food":"food name + quantity","calories":number,"protein":number,"fat":number,"carbs":number,"fiber":number},
+     {"food":"food name + quantity","calories":number,"protein":number,"fat":number,"carbs":number,"fiber":number}
+   ]}
 
 2. SAVING A FAVOURITE: If the user says something like "save as favourite X" or "mark this as favourite X".
    Respond: {"type":"favourite_save","name":"the name they gave"}
@@ -382,6 +390,9 @@ User says: ${input}`;
         const parsed = JSON.parse(raw);
 
         if (parsed.type === 'meal') return { type: 'meal', data: parseMealData(parsed, input) };
+        if (parsed.type === 'meal_list' && Array.isArray(parsed.items)) {
+            return { type: 'meal_list', items: parsed.items.map((item: any) => parseMealData(item, input)) };
+        }
         if (parsed.type === 'favourite_save') return { type: 'favourite_save', name: parsed.name };
         if (parsed.type === 'favourite_log') return { type: 'favourite_log', name: parsed.name };
         if (parsed.type === 'weight') return { type: 'weight', weight: parseFloat(parsed.weight) || 0 };

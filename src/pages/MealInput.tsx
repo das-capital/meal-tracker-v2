@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, Send, Sparkles, CheckCircle, AlertCircle, Star, Lightbulb, ChefHat, Camera, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { Mic, Send, Sparkles, CheckCircle, AlertCircle, Star, Lightbulb, ChefHat, Camera, ExternalLink, ChevronDown, ChevronUp, Edit2, Eraser, Barcode } from 'lucide-react';
 import canvasConfetti from 'canvas-confetti';
 import { processInput, getMealSuggestion, processLabelImage } from '../lib/ai-parser';
+import { BarcodeScanner } from '../components/BarcodeScanner';
+import { fetchByBarcode, type OFFProduct } from '../lib/openfoodfacts';
 import { useMeals } from '../hooks/useMeals';
 import { useSettings } from '../hooks/useSettings';
-import { addFavourite, addWeight, getAllFavourites, getAllRecipes, saveSetting, type Favourite } from '../lib/db';
+import { addFavourite, addWeight, getAllFavourites, getAllRecipes, saveSetting, updateMeal, type Favourite } from '../lib/db';
 import { FavouritesPanel } from '../components/FavouritesPanel';
 import { RecipesPanel } from '../components/RecipesPanel';
 import { format } from 'date-fns';
@@ -17,9 +19,11 @@ interface ChatMessage {
     id: number;
     role: 'user' | 'assistant';
     text: string;
-    type?: 'meal' | 'chat' | 'error' | 'suggestion' | 'weight' | 'favourite_saved';
-    mealData?: { food: string; calories: number; protein: number; carbs: number; fiber: number };
+    type?: 'meal' | 'chat' | 'error' | 'suggestion' | 'weight' | 'favourite_saved' | 'barcode_found';
+    mealData?: { food: string; calories: number; protein: number; fat: number; carbs: number; fiber: number };
+    mealId?: number;
     imagePreview?: string;
+    barcodeProduct?: OFFProduct;
 }
 
 const CHAT_STORAGE_KEY = 'meal-tracker-chat';
@@ -36,10 +40,15 @@ function loadTodayChat(): ChatMessage[] {
 }
 
 function saveTodayChat(messages: ChatMessage[]) {
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({
-        date: format(new Date(), 'yyyy-MM-dd'),
-        messages,
-    }));
+    try {
+        const stripped = messages.map(({ imagePreview: _, ...rest }) => rest);
+        localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({
+            date: format(new Date(), 'yyyy-MM-dd'),
+            messages: stripped,
+        }));
+    } catch {
+        // Quota exceeded — chat won't persist this session, that's okay
+    }
 }
 
 export const MealInput = () => {
@@ -55,6 +64,10 @@ export const MealInput = () => {
     const [showRecipes, setShowRecipes] = useState(false);
     const [hasSuggested, setHasSuggested] = useState(false);
     const [pendingImage, setPendingImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null);
+    const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+    const [pendingBarcode, setPendingBarcode] = useState<OFFProduct | null>(null);
+    const [editingMsgId, setEditingMsgId] = useState<number | null>(null);
+    const [draftMacros, setDraftMacros] = useState<{ calories: number; protein: number; fat: number; carbs: number; fiber: number } | null>(null);
 
     // Onboarding state
     const [onboardingExpand, setOnboardingExpand] = useState<null | 'openai-groq' | 'gemini'>(null);
@@ -70,20 +83,24 @@ export const MealInput = () => {
 
     useEffect(() => {
         const handleRecipeLog = async (e: Event) => {
-            const { recipe, weight } = (e as CustomEvent).detail;
-            const ratio = weight / recipe.totalWeight;
-            const mealData = {
-                food: `${weight}g ${recipe.name}`,
-                calories: Math.round(recipe.totalCalories * ratio),
-                protein: Math.round(recipe.totalProtein * ratio),
-                fat: Math.round(recipe.totalFat * ratio),
-                carbs: Math.round(recipe.totalCarbs * ratio),
-                fiber: Math.round(recipe.totalFiber * ratio),
-            };
-            await addMeal(`${weight}g of ${recipe.name}`, mealData);
-            await refreshMeals();
-            fireConfetti();
-            addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData });
+            try {
+                const { recipe, weight } = (e as CustomEvent).detail;
+                const ratio = weight / recipe.totalWeight;
+                const mealData = {
+                    food: `${weight}g ${recipe.name}`,
+                    calories: Math.round(recipe.totalCalories * ratio),
+                    protein: Math.round(recipe.totalProtein * ratio),
+                    fat: Math.round(recipe.totalFat * ratio),
+                    carbs: Math.round(recipe.totalCarbs * ratio),
+                    fiber: Math.round(recipe.totalFiber * ratio),
+                };
+                await addMeal(`${weight}g of ${recipe.name}`, mealData);
+                await refreshMeals();
+                fireConfetti();
+                addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData });
+            } catch {
+                addMsg({ role: 'assistant', type: 'error', text: 'Failed to log recipe. Please try again.' });
+            }
         };
         window.addEventListener('recipe-log', handleRecipeLog);
         return () => window.removeEventListener('recipe-log', handleRecipeLog);
@@ -138,6 +155,40 @@ export const MealInput = () => {
             img.src = url;
         });
 
+    const parseBarcodeGrams = (text: string): number | null => {
+        const m = text.match(/(\d+\.?\d*)\s*(?:gm?s?\b|gram?s?\b|ml\b)/i);
+        if (m) return parseFloat(m[1]);
+        const bare = text.match(/^(\d+\.?\d*)$/);
+        if (bare) return parseFloat(bare[1]);
+        return null;
+    };
+
+    const handleBarcodeDetected = async (barcode: string) => {
+        setShowBarcodeScanner(false);
+        setIsProcessing(true);
+        addMsg({ role: 'user', text: `Barcode: ${barcode}` });
+        try {
+            const result = await fetchByBarcode(barcode);
+            if (result.found) {
+                setPendingBarcode(result.product);
+                addMsg({ role: 'assistant', type: 'barcode_found', text: '', barcodeProduct: result.product });
+            } else {
+                const reason = result.reason;
+                const text =
+                    reason === 'network_error'
+                        ? 'Could not reach Open Food Facts. Check your internet connection and try again.'
+                        : reason === 'no_nutrition'
+                        ? 'Found the product but it has no nutrition data in the database. Try typing your meal manually.'
+                        : 'Product not found in Open Food Facts. Try typing your meal manually.';
+                addMsg({ role: 'assistant', type: 'error', text });
+            }
+        } catch {
+            addMsg({ role: 'assistant', type: 'error', text: 'Something went wrong fetching product data. Please try again.' });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
     const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -158,89 +209,141 @@ export const MealInput = () => {
         setIsProcessing(true);
         addMsg({ role: 'user', text });
 
-        const result = pendingImage
-            ? await processLabelImage(pendingImage.base64, pendingImage.mimeType, text)
-            : await processInput(text);
-        setPendingImage(null);
-
-        if (result.type === 'meal') {
-            await addMeal(text, result.data);
-            fireConfetti();
-            addMsg({
-                role: 'assistant', type: 'meal', text: 'Logged!',
-                mealData: result.data,
-            });
-            triggerSuggestion();
-        } else if (result.type === 'favourite_save') {
-            if (meals.length > 0) {
-                const lastMeal = meals[meals.length - 1];
-                try {
-                    await addFavourite({
-                        name: result.name,
-                        content: lastMeal.content,
-                        parsed: lastMeal.parsed,
-                        totalCalories: lastMeal.totalCalories,
-                        createdAt: Date.now(),
-                    });
-                    addMsg({ role: 'assistant', type: 'favourite_saved', text: `Saved "${result.name}" as a favourite!` });
-                } catch (e: any) {
-                    addMsg({ role: 'assistant', type: 'error', text: `A favourite named "${result.name}" already exists. Use a different name.` });
+        try {
+            if (pendingBarcode) {
+                const grams = parseBarcodeGrams(text);
+                if (!grams || grams <= 0) {
+                    addMsg({ role: 'assistant', type: 'error',
+                        text: `Couldn't understand "${text}". Try something like "200g".` });
+                    return;
                 }
-            } else {
-                addMsg({ role: 'assistant', type: 'error', text: 'Log a meal first, then save it as a favourite.' });
-            }
-        } else if (result.type === 'favourite_log') {
-            const favs = await getAllFavourites();
-            const fav = favs.find(f => f.name.toLowerCase() === result.name.toLowerCase());
-            if (fav) {
-                if (window.confirm(`Log "${fav.name}" as a meal?`)) {
-                    await addMeal(fav.content, fav.parsed[0]);
-                    fireConfetti();
-                    addMsg({
-                        role: 'assistant', type: 'meal', text: `Logged favourite "${fav.name}"!`,
-                        mealData: fav.parsed[0],
-                    });
-                }
-            } else {
-                addMsg({ role: 'assistant', type: 'error', text: `No favourite named "${result.name}" found.` });
-            }
-        } else if (result.type === 'recipe_log') {
-            const recipes = await getAllRecipes();
-            const recipe = recipes.find(r => r.name.toLowerCase() === result.name.toLowerCase());
-            if (recipe) {
-                const ratio = result.weight / recipe.totalWeight;
+                const ratio = grams / 100;
+                const p = pendingBarcode;
+                const displayName = [p.brand, p.name].filter(Boolean).join(' – ') || 'Scanned product';
                 const mealData = {
-                    food: `${result.weight}g ${recipe.name}`,
-                    calories: Math.round(recipe.totalCalories * ratio),
-                    protein: Math.round(recipe.totalProtein * ratio),
-                    fat: Math.round(recipe.totalFat * ratio),
-                    carbs: Math.round(recipe.totalCarbs * ratio),
-                    fiber: Math.round(recipe.totalFiber * ratio),
+                    food: `${grams}g ${displayName}`,
+                    calories: Math.round(p.per100kcal * ratio),
+                    protein:  Math.round(p.per100protein * ratio),
+                    fat:      Math.round(p.per100fat * ratio),
+                    carbs:    Math.round(p.per100carbs * ratio),
+                    fiber:    Math.round(p.per100fiber * ratio),
                 };
-                await addMeal(`${result.weight}g of ${recipe.name}`, mealData);
+                const mealId = await addMeal(text, mealData);
+                setPendingBarcode(null);
                 fireConfetti();
-                addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData });
+                addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData, mealId });
                 triggerSuggestion();
-            } else {
-                addMsg({ role: 'assistant', type: 'error', text: `No recipe named "${result.name}" found.` });
+                return;
             }
-        } else if (result.type === 'weight') {
-            await addWeight({ date: format(new Date(), 'yyyy-MM-dd'), weight: result.weight, timestamp: Date.now() });
-            await saveSetting('profileWeight', result.weight);
-            addMsg({ role: 'assistant', type: 'weight', text: `Weight logged: ${result.weight} kg (profile updated)` });
-        } else if (result.type === 'height') {
-            await saveSetting('profileHeight', result.height);
-            addMsg({ role: 'assistant', type: 'weight', text: `Height saved: ${result.height} cm (profile updated)` });
-        } else if (result.type === 'age') {
-            await saveSetting('profileAge', result.age);
-            addMsg({ role: 'assistant', type: 'weight', text: `Age saved: ${result.age} years (profile updated)` });
-        } else if (result.type === 'chat') {
-            addMsg({ role: 'assistant', type: 'chat', text: result.message });
-        } else {
-            addMsg({ role: 'assistant', type: 'error', text: result.message });
-        }
 
-        setIsProcessing(false);
+            const result = pendingImage
+                ? await processLabelImage(pendingImage.base64, pendingImage.mimeType, text)
+                : await processInput(text);
+            setPendingImage(null);
+
+            if (result.type === 'meal') {
+                const mealId = await addMeal(text, result.data);
+                fireConfetti();
+                addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData: result.data, mealId });
+                triggerSuggestion();
+            } else if (result.type === 'meal_list') {
+                for (const item of result.items) {
+                    const mealId = await addMeal(text, item);
+                    addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData: item, mealId });
+                }
+                fireConfetti();
+                triggerSuggestion();
+            } else if (result.type === 'favourite_save') {
+                if (meals.length > 0) {
+                    const lastMeal = meals[meals.length - 1];
+                    try {
+                        await addFavourite({
+                            name: result.name,
+                            content: lastMeal.content,
+                            parsed: lastMeal.parsed,
+                            totalCalories: lastMeal.totalCalories,
+                            createdAt: Date.now(),
+                        });
+                        addMsg({ role: 'assistant', type: 'favourite_saved', text: `Saved "${result.name}" as a favourite!` });
+                    } catch (e: any) {
+                        addMsg({ role: 'assistant', type: 'error', text: `A favourite named "${result.name}" already exists. Use a different name.` });
+                    }
+                } else {
+                    addMsg({ role: 'assistant', type: 'error', text: 'Log a meal first, then save it as a favourite.' });
+                }
+            } else if (result.type === 'favourite_log') {
+                const favs = await getAllFavourites();
+                const fav = favs.find(f => f.name.toLowerCase() === result.name.toLowerCase());
+                if (fav) {
+                    if (window.confirm(`Log "${fav.name}" as a meal?`)) {
+                        await addMeal(fav.content, fav.parsed[0]);
+                        fireConfetti();
+                        addMsg({
+                            role: 'assistant', type: 'meal', text: `Logged favourite "${fav.name}"!`,
+                            mealData: fav.parsed[0],
+                        });
+                    }
+                } else {
+                    addMsg({ role: 'assistant', type: 'error', text: `No favourite named "${result.name}" found.` });
+                }
+            } else if (result.type === 'recipe_log') {
+                const recipes = await getAllRecipes();
+                const recipe = recipes.find(r => r.name.toLowerCase() === result.name.toLowerCase());
+                if (recipe) {
+                    const ratio = result.weight / recipe.totalWeight;
+                    const mealData = {
+                        food: `${result.weight}g ${recipe.name}`,
+                        calories: Math.round(recipe.totalCalories * ratio),
+                        protein: Math.round(recipe.totalProtein * ratio),
+                        fat: Math.round(recipe.totalFat * ratio),
+                        carbs: Math.round(recipe.totalCarbs * ratio),
+                        fiber: Math.round(recipe.totalFiber * ratio),
+                    };
+                    await addMeal(`${result.weight}g of ${recipe.name}`, mealData);
+                    fireConfetti();
+                    addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData });
+                    triggerSuggestion();
+                } else {
+                    addMsg({ role: 'assistant', type: 'error', text: `No recipe named "${result.name}" found.` });
+                }
+            } else if (result.type === 'weight') {
+                await addWeight({ date: format(new Date(), 'yyyy-MM-dd'), weight: result.weight, timestamp: Date.now() });
+                await saveSetting('profileWeight', result.weight);
+                addMsg({ role: 'assistant', type: 'weight', text: `Weight logged: ${result.weight} kg (profile updated)` });
+            } else if (result.type === 'height') {
+                await saveSetting('profileHeight', result.height);
+                addMsg({ role: 'assistant', type: 'weight', text: `Height saved: ${result.height} cm (profile updated)` });
+            } else if (result.type === 'age') {
+                await saveSetting('profileAge', result.age);
+                addMsg({ role: 'assistant', type: 'weight', text: `Age saved: ${result.age} years (profile updated)` });
+            } else if (result.type === 'chat') {
+                addMsg({ role: 'assistant', type: 'chat', text: result.message });
+            } else {
+                addMsg({ role: 'assistant', type: 'error', text: result.message });
+            }
+        } catch {
+            addMsg({ role: 'assistant', type: 'error', text: 'Something went wrong. Please try again.' });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleSaveMacros = async (msgId: number, mealId: number) => {
+        if (!draftMacros) return;
+        const meal = meals.find(m => m.id === mealId);
+        if (meal) {
+            await updateMeal({
+                ...meal,
+                parsed: [{ ...meal.parsed[0], ...draftMacros }],
+                totalCalories: draftMacros.calories,
+            });
+            await refreshMeals();
+        }
+        setMessages(prev => prev.map(m =>
+            m.id === msgId ? { ...m, mealData: { ...m.mealData!, ...draftMacros } } : m
+        ));
+        setEditingMsgId(null);
+        setDraftMacros(null);
     };
 
     const handleLogFavourite = async (fav: Favourite) => {
@@ -251,6 +354,13 @@ export const MealInput = () => {
             role: 'assistant', type: 'meal', text: `Logged favourite "${fav.name}"!`,
             mealData: fav.parsed[0],
         });
+    };
+
+    const handleClearChat = () => {
+        setMessages([]);
+        localStorage.removeItem(CHAT_STORAGE_KEY);
+        setEditingMsgId(null);
+        setDraftMacros(null);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -286,6 +396,18 @@ export const MealInput = () => {
         >
             {/* Chat area */}
             <div className="flex-1 overflow-y-auto py-4 space-y-3 pb-4">
+
+                {messages.length > 0 && (
+                    <div className="flex justify-end">
+                        <button
+                            onClick={handleClearChat}
+                            className="flex items-center gap-1 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                        >
+                            <Eraser className="w-3 h-3" />
+                            Clear chat
+                        </button>
+                    </div>
+                )}
 
                 {/* Onboarding banner */}
                 {showOnboarding && (
@@ -441,19 +563,81 @@ export const MealInput = () => {
                                         <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
                                         <span className="text-sm font-semibold text-zinc-200">{msg.mealData.food}</span>
                                     </div>
-                                    <div className="grid grid-cols-4 gap-2 text-center">
-                                        {[
-                                            { label: 'Cal', val: msg.mealData.calories, unit: '' },
-                                            { label: 'Pro', val: msg.mealData.protein, unit: 'g' },
-                                            { label: 'Carb', val: msg.mealData.carbs, unit: 'g' },
-                                            { label: 'Fiber', val: msg.mealData.fiber, unit: 'g' },
-                                        ].map(m => (
-                                            <div key={m.label}>
-                                                <p className="text-xs text-zinc-500">{m.label}</p>
-                                                <p className="text-sm font-bold text-zinc-300">{m.val}{m.unit}</p>
+
+                                    {editingMsgId !== msg.id && (
+                                        <div className="grid grid-cols-4 gap-2 text-center">
+                                            {[
+                                                { label: 'Cal', val: msg.mealData.calories, unit: '' },
+                                                { label: 'Pro', val: msg.mealData.protein, unit: 'g' },
+                                                { label: 'Carb', val: msg.mealData.carbs, unit: 'g' },
+                                                { label: 'Fiber', val: msg.mealData.fiber, unit: 'g' },
+                                            ].map(m => (
+                                                <div key={m.label}>
+                                                    <p className="text-xs text-zinc-500">{m.label}</p>
+                                                    <p className="text-sm font-bold text-zinc-300">{m.val}{m.unit}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {editingMsgId === msg.id && draftMacros && (
+                                        <div className="space-y-2">
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {([
+                                                    { key: 'calories', label: 'Calories' },
+                                                    { key: 'protein',  label: 'Protein (g)' },
+                                                    { key: 'fat',      label: 'Fat (g)' },
+                                                    { key: 'carbs',    label: 'Carbs (g)' },
+                                                    { key: 'fiber',    label: 'Fiber (g)' },
+                                                ] as const).map(({ key, label }) => (
+                                                    <div key={key}>
+                                                        <p className="text-xs text-zinc-500 mb-0.5">{label}</p>
+                                                        <input
+                                                            type="number"
+                                                            value={draftMacros[key]}
+                                                            onChange={e => setDraftMacros(prev =>
+                                                                prev ? { ...prev, [key]: parseInt(e.target.value) || 0 } : prev
+                                                            )}
+                                                            className="w-full bg-zinc-700 border border-white/10 rounded-lg px-2 py-1 text-zinc-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                                                        />
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
-                                    </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleSaveMacros(msg.id, msg.mealId!)}
+                                                    className="flex-1 py-1.5 bg-emerald-500 hover:bg-emerald-400 rounded-lg text-zinc-900 text-xs font-semibold transition-colors"
+                                                >
+                                                    Save
+                                                </button>
+                                                <button
+                                                    onClick={() => { setEditingMsgId(null); setDraftMacros(null); }}
+                                                    className="flex-1 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-zinc-300 text-xs transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {editingMsgId !== msg.id && msg.mealId && (
+                                        <button
+                                            onClick={() => {
+                                                setEditingMsgId(msg.id);
+                                                setDraftMacros({
+                                                    calories: msg.mealData!.calories,
+                                                    protein:  msg.mealData!.protein,
+                                                    fat:      msg.mealData!.fat ?? 0,
+                                                    carbs:    msg.mealData!.carbs,
+                                                    fiber:    msg.mealData!.fiber,
+                                                });
+                                            }}
+                                            className="mt-2 flex items-center gap-1 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                                        >
+                                            <Edit2 className="w-3 h-3" />
+                                            Edit macros
+                                        </button>
+                                    )}
                                 </div>
                             ) : msg.type === 'suggestion' ? (
                                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%] flex items-start gap-2">
@@ -469,6 +653,30 @@ export const MealInput = () => {
                                 <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[80%] flex items-center gap-2">
                                     <CheckCircle className="w-4 h-4 text-blue-400 shrink-0" />
                                     <p className="text-sm text-blue-200">{msg.text}</p>
+                                </div>
+                            ) : msg.type === 'barcode_found' && msg.barcodeProduct ? (
+                                <div className="bg-zinc-800 border border-white/5 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Barcode className="w-4 h-4 text-emerald-400 shrink-0" />
+                                        <span className="text-sm font-semibold text-zinc-200 leading-tight">
+                                            {[msg.barcodeProduct.brand, msg.barcodeProduct.name].filter(Boolean).join(' – ') || 'Scanned product'}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-zinc-500 mb-2">Per 100g</p>
+                                    <div className="grid grid-cols-4 gap-2 text-center mb-3">
+                                        {[
+                                            { label: 'Cal', val: msg.barcodeProduct.per100kcal },
+                                            { label: 'Pro', val: msg.barcodeProduct.per100protein },
+                                            { label: 'Carb', val: msg.barcodeProduct.per100carbs },
+                                            { label: 'Fat', val: msg.barcodeProduct.per100fat },
+                                        ].map(m => (
+                                            <div key={m.label}>
+                                                <p className="text-xs text-zinc-500">{m.label}</p>
+                                                <p className="text-sm font-bold text-zinc-300">{m.val}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-zinc-500">Now type how much you had (e.g. 200g)</p>
                                 </div>
                             ) : msg.type === 'error' ? (
                                 msg.text.startsWith('invalid_key_') ? (
@@ -592,11 +800,25 @@ export const MealInput = () => {
                     >
                         <Camera className="w-4 h-4" />
                     </button>
+                    <button
+                        onClick={() => setShowBarcodeScanner(true)}
+                        disabled={isProcessing}
+                        className={clsx(
+                            'w-8 h-8 rounded-xl flex items-center justify-center transition-colors shrink-0',
+                            pendingBarcode ? 'text-emerald-400' : 'text-zinc-400/60 hover:text-zinc-300'
+                        )}
+                    >
+                        <Barcode className="w-4 h-4" />
+                    </button>
                     <textarea
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder={pendingImage ? 'How much did you have? (e.g. 250ml, 2 glasses)' : 'e.g. had a medium bowl of dal...'}
+                        placeholder={
+                            pendingBarcode ? 'How much did you have? (e.g. 200g)'
+                            : pendingImage ? 'How much did you have? (e.g. 250ml, 2 glasses)'
+                            : 'e.g. had a medium bowl of dal...'
+                        }
                         disabled={isProcessing}
                         rows={1}
                         className="flex-1 bg-transparent text-zinc-200 placeholder:text-zinc-600 focus:outline-none resize-none text-sm py-1 max-h-28 disabled:opacity-50"
@@ -634,6 +856,15 @@ export const MealInput = () => {
                 open={showRecipes}
                 onClose={() => setShowRecipes(false)}
             />
+
+            <AnimatePresence>
+                {showBarcodeScanner && (
+                    <BarcodeScanner
+                        onDetected={handleBarcodeDetected}
+                        onClose={() => setShowBarcodeScanner(false)}
+                    />
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 };
