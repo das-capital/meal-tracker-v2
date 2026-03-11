@@ -61,7 +61,8 @@ async function callGeminiAPI(
     if (!response.ok) {
         const err = await response.text();
         console.error('Gemini API error:', err);
-        if (response.status === 401 || response.status === 403) throw new Error('api_auth_error');
+        // Google returns 400 (not 401) for invalid/expired API keys
+        if (response.status === 400 || response.status === 401 || response.status === 403) throw new Error('api_auth_error');
         throw new Error(`Gemini API error: ${response.status}`);
     }
 
