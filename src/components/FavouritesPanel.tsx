@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Trash2, Star, Edit2, Check } from 'lucide-react';
 import { getAllFavourites, deleteFavourite, updateFavourite, type Favourite } from '../lib/db';
+import { ConfirmModal } from './ConfirmModal';
 
 interface Props {
     open: boolean;
@@ -13,6 +14,7 @@ export const FavouritesPanel = ({ open, onClose, onLogFavourite }: Props) => {
     const [favourites, setFavourites] = useState<Favourite[]>([]);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editName, setEditName] = useState('');
+    const [deletingId, setDeletingId] = useState<number | null>(null);
 
     const load = async () => {
         const favs = await getAllFavourites();
@@ -21,18 +23,16 @@ export const FavouritesPanel = ({ open, onClose, onLogFavourite }: Props) => {
 
     useEffect(() => { if (open) load(); }, [open]);
 
-    const handleDelete = async (id: number) => {
-        if (window.confirm('Delete this favourite?')) {
-            await deleteFavourite(id);
-            load();
-        }
+    const handleDelete = async () => {
+        if (deletingId == null) return;
+        await deleteFavourite(deletingId);
+        setDeletingId(null);
+        load();
     };
 
     const handleLog = (fav: Favourite) => {
-        if (window.confirm(`Log "${fav.name}" as a meal?`)) {
-            onLogFavourite(fav);
-            onClose();
-        }
+        onLogFavourite(fav);
+        onClose();
     };
 
     const startEdit = (fav: Favourite) => {
@@ -64,26 +64,26 @@ export const FavouritesPanel = ({ open, onClose, onLogFavourite }: Props) => {
                         animate={{ y: 0 }}
                         exit={{ y: '100%' }}
                         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                        className="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-white/10 rounded-t-3xl z-[70] max-h-[70vh] flex flex-col pb-20"
+                        className="fixed bottom-0 left-0 right-0 bg-surface border-t border-th-border-strong rounded-t-3xl z-[70] max-h-[70vh] flex flex-col pb-20"
                     >
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-th-border">
                             <div className="flex items-center gap-2">
                                 <Star className="w-4 h-4 text-amber-400" />
-                                <h2 className="text-lg font-semibold text-zinc-100">Favourites</h2>
+                                <h2 className="text-lg font-semibold text-th-primary">Favourites</h2>
                             </div>
-                            <button onClick={onClose} className="p-1 text-zinc-500 active:text-zinc-300">
+                            <button onClick={onClose} className="p-1 text-th-muted active:text-th-primary">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
                         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
                             {favourites.length === 0 ? (
-                                <p className="text-center text-zinc-600 text-sm py-8">
+                                <p className="text-center text-th-faint text-sm py-8">
                                     No favourites yet. Type "save as favourite breakfast one" after logging a meal.
                                 </p>
                             ) : (
                                 favourites.map(fav => (
-                                    <div key={fav.id} className="bg-zinc-800 border border-white/5 rounded-xl px-4 py-3 flex items-center gap-3">
+                                    <div key={fav.id} className="bg-surface2 border border-th-border rounded-xl px-4 py-3 flex items-center gap-3">
                                         <button
                                             onClick={() => handleLog(fav)}
                                             className="flex-1 min-w-0 text-left"
@@ -94,13 +94,13 @@ export const FavouritesPanel = ({ open, onClose, onLogFavourite }: Props) => {
                                                     onChange={e => setEditName(e.target.value)}
                                                     onClick={e => e.stopPropagation()}
                                                     onKeyDown={e => e.key === 'Enter' && saveEdit(fav)}
-                                                    className="bg-zinc-700 text-zinc-200 rounded px-2 py-1 text-sm w-full focus:outline-none"
+                                                    className="bg-surface text-th-primary rounded px-2 py-1 text-sm w-full focus:outline-none"
                                                     autoFocus
                                                 />
                                             ) : (
                                                 <>
-                                                    <p className="text-zinc-200 text-sm font-medium truncate">{fav.name}</p>
-                                                    <p className="text-xs text-zinc-500 truncate">
+                                                    <p className="text-th-primary text-sm font-medium truncate">{fav.name}</p>
+                                                    <p className="text-xs text-th-muted truncate">
                                                         {fav.parsed[0]?.food} · {fav.totalCalories} kcal · {fav.parsed[0]?.protein}g P
                                                     </p>
                                                 </>
@@ -112,11 +112,11 @@ export const FavouritesPanel = ({ open, onClose, onLogFavourite }: Props) => {
                                                     <Check className="w-3.5 h-3.5" />
                                                 </button>
                                             ) : (
-                                                <button onClick={() => startEdit(fav)} className="p-1.5 text-zinc-600 active:text-zinc-300">
+                                                <button onClick={() => startEdit(fav)} className="p-1.5 text-th-faint active:text-th-primary">
                                                     <Edit2 className="w-3.5 h-3.5" />
                                                 </button>
                                             )}
-                                            <button onClick={() => fav.id && handleDelete(fav.id)} className="p-1.5 text-zinc-600 active:text-red-400">
+                                            <button onClick={() => fav.id && setDeletingId(fav.id)} className="p-1.5 text-th-faint active:text-red-400">
                                                 <Trash2 className="w-3.5 h-3.5" />
                                             </button>
                                         </div>
@@ -125,6 +125,14 @@ export const FavouritesPanel = ({ open, onClose, onLogFavourite }: Props) => {
                             )}
                         </div>
                     </motion.div>
+
+                    {deletingId != null && (
+                        <ConfirmModal
+                            message="Delete this favourite?"
+                            onConfirm={handleDelete}
+                            onCancel={() => setDeletingId(null)}
+                        />
+                    )}
                 </>
             )}
         </AnimatePresence>

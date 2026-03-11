@@ -63,11 +63,11 @@ export const EditMealModal = ({ meal, onClose, onSaved }: Props) => {
                         animate={{ y: 0 }}
                         exit={{ y: '100%' }}
                         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                        className="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-white/10 rounded-t-3xl z-[70] max-h-[80vh] flex flex-col"
+                        className="fixed bottom-0 left-0 right-0 bg-surface border-t border-th-border-strong rounded-t-3xl z-[70] max-h-[80vh] flex flex-col"
                     >
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
-                            <h2 className="text-lg font-semibold text-zinc-100">Edit Meal</h2>
-                            <button onClick={onClose} className="p-1 text-zinc-500 active:text-zinc-300">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-th-border">
+                            <h2 className="text-lg font-semibold text-th-primary">Edit Meal</h2>
+                            <button onClick={onClose} className="p-1 text-th-muted active:text-th-primary">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -75,19 +75,19 @@ export const EditMealModal = ({ meal, onClose, onSaved }: Props) => {
                         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
                             {/* Current meal description */}
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-xs text-zinc-400">What you had (edit to change)</label>
+                                <label className="text-xs text-th-secondary">What you had (edit to change)</label>
                                 <textarea
                                     value={description}
                                     onChange={e => setDescription(e.target.value)}
                                     rows={3}
                                     disabled={isProcessing}
-                                    className="bg-zinc-900/50 rounded-xl border border-white/10 p-3 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm resize-none disabled:opacity-50"
+                                    className="bg-surface2 rounded-xl border border-th-border-strong p-3 text-th-primary focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm resize-none disabled:opacity-50"
                                 />
                             </div>
 
                             {/* Add more items */}
                             <div className="flex flex-col gap-1.5">
-                                <label className="text-xs text-zinc-400 flex items-center gap-1">
+                                <label className="text-xs text-th-secondary flex items-center gap-1">
                                     <Plus className="w-3 h-3" /> Add more to this meal
                                 </label>
                                 <textarea
@@ -96,7 +96,7 @@ export const EditMealModal = ({ meal, onClose, onSaved }: Props) => {
                                     placeholder="e.g. one bowl of dal, a glass of lassi..."
                                     rows={2}
                                     disabled={isProcessing}
-                                    className="bg-zinc-900/50 rounded-xl border border-white/10 p-3 text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm resize-none disabled:opacity-50"
+                                    className="bg-surface2 rounded-xl border border-th-border-strong p-3 text-th-primary placeholder:text-th-faint focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm resize-none disabled:opacity-50"
                                 />
                             </div>
 
@@ -105,7 +105,7 @@ export const EditMealModal = ({ meal, onClose, onSaved }: Props) => {
                             )}
                         </div>
 
-                        <div className="px-5 py-4 border-t border-white/5">
+                        <div className="px-5 py-4 border-t border-th-border">
                             <button
                                 onClick={handleSave}
                                 disabled={isProcessing || !description.trim()}

@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, runTransaction } from 'firebase-admin/firestore';
+import { getFirestore, runTransaction, type Firestore } from 'firebase-admin/firestore';
 
 const MAX_PROMPT = 20_000;
 const MAX_IMAGE  = 4_000_000;
@@ -13,8 +13,31 @@ function getAdminServices() {
     return { auth: getAuth(), db: getFirestore() };
 }
 
-const DAILY_LIMIT = 30;
+const DEFAULT_DAILY_LIMIT = 30;
 const today = () => new Date().toISOString().slice(0, 10);
+
+let cachedLimit: { value: number; fetchedAt: number } | null = null;
+const LIMIT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getDailyLimit(db: Firestore): Promise<number> {
+    const now = Date.now();
+    if (cachedLimit && now - cachedLimit.fetchedAt < LIMIT_CACHE_TTL) {
+        return cachedLimit.value;
+    }
+    const adminUid = process.env.ADMIN_UID;
+    if (adminUid) {
+        try {
+            const snap = await db.doc(`users/${adminUid}/settings/data`).get();
+            const val = snap.data()?.hostedDailyLimit;
+            if (typeof val === 'number' && val > 0) {
+                cachedLimit = { value: val, fetchedAt: now };
+                return val;
+            }
+        } catch { /* fall through */ }
+    }
+    cachedLimit = { value: DEFAULT_DAILY_LIMIT, fetchedAt: now };
+    return DEFAULT_DAILY_LIMIT;
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Access-Control-Allow-Origin', 'https://meal-tracker-v2-lzvh.vercel.app');
@@ -47,19 +70,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 3. Atomic rate limit check-and-increment
     const { db } = getAdminServices();
+    const dailyLimit = await getDailyLimit(db);
     const usageRef = db.doc(`users/${uid}/usage/${today()}`);
     let count: number;
     try {
         count = await runTransaction(db, async (t) => {
             const snap = await t.get(usageRef);
             const current = (snap.data()?.hostedKeyCount ?? 0) as number;
-            if (current >= DAILY_LIMIT) throw new Error('limit_exceeded');
+            if (current >= dailyLimit) throw new Error('limit_exceeded');
             t.set(usageRef, { hostedKeyCount: current + 1 }, { merge: true });
             return current;
         });
     } catch (err: any) {
         if (err.message === 'limit_exceeded') {
-            return res.status(429).json({ error: 'hosted_limit_exceeded', limit: DAILY_LIMIT });
+            return res.status(429).json({ error: 'hosted_limit_exceeded', limit: dailyLimit });
         }
         throw err;
     }
@@ -84,5 +108,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const raw: string = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     const text = raw.replace(/```json/g, '').replace(/```/g, '').trim();
 
-    return res.status(200).json({ text, used: count + 1, limit: DAILY_LIMIT });
+    return res.status(200).json({ text, used: count + 1, limit: dailyLimit });
 }

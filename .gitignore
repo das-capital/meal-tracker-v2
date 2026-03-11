@@ -118,3 +118,6 @@ dist
 
 # Gemini / Local Artifacts
 .gemini/
+
+# Claude Code
+.claude/

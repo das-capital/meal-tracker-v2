@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, ChevronDown, ChevronUp, Edit2 } from 'lucide-react';
 import { EditMealModal } from '../components/EditMealModal';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { getAllMeals, deleteMeal, getAllWeights, type Meal, type WeightEntry } from '../lib/db';
+import { useSettings } from '../hooks/useSettings';
 import { format, subDays, isAfter, startOfWeek, startOfMonth } from 'date-fns';
 
 type ViewMode = 'daily' | 'weekly' | 'monthly';
@@ -36,7 +38,7 @@ const WeightChart = ({ weights }: { weights: WeightEntry[] }) => {
     const first = vals[0];
     const diff = latest - first;
     const diffText = diff === 0 ? 'No change' : `${diff > 0 ? '+' : ''}${diff.toFixed(1)} kg`;
-    const diffColor = diff < 0 ? 'text-emerald-400' : diff > 0 ? 'text-red-400' : 'text-zinc-500';
+    const diffColor = diff < 0 ? 'text-emerald-400' : diff > 0 ? 'text-red-400' : 'text-th-muted';
 
     const chartW = 280;
     const chartH = 120;
@@ -54,11 +56,11 @@ const WeightChart = ({ weights }: { weights: WeightEntry[] }) => {
     const yLabels = Array.from({ length: ySteps + 1 }, (_, i) => min + (range / ySteps) * i);
 
     return (
-        <div className="bg-zinc-800/60 border border-white/5 rounded-2xl p-4 mb-4">
+        <div className="bg-surface/60 border border-th-border rounded-2xl p-4 mb-4">
             <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Weight Trend</h3>
+                <h3 className="text-xs font-bold text-th-muted uppercase tracking-widest">Weight Trend</h3>
                 <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-zinc-100">{latest} kg</span>
+                    <span className="text-lg font-bold text-th-primary">{latest} kg</span>
                     <span className={`text-xs font-medium ${diffColor}`}>{diffText}</span>
                 </div>
             </div>
@@ -67,8 +69,8 @@ const WeightChart = ({ weights }: { weights: WeightEntry[] }) => {
                 {/* Grid lines and Y labels */}
                 {yLabels.map((v, i) => (
                     <g key={i}>
-                        <line x1="0" x2={chartW} y1={getY(v)} y2={getY(v)} stroke="#27272a" strokeWidth="0.5" />
-                        <text x="-8" y={getY(v) + 3} textAnchor="end" fill="#71717a" fontSize="8">{v.toFixed(1)}</text>
+                        <line x1="0" x2={chartW} y1={getY(v)} y2={getY(v)} stroke="var(--color-chart-grid)" strokeWidth="0.5" />
+                        <text x="-8" y={getY(v) + 3} textAnchor="end" fill="var(--color-chart-label)" fontSize="8">{v.toFixed(1)}</text>
                     </g>
                 ))}
 
@@ -90,9 +92,9 @@ const WeightChart = ({ weights }: { weights: WeightEntry[] }) => {
                 {/* Data points with labels */}
                 {sorted.map((w, i) => (
                     <g key={i}>
-                        <circle cx={getX(i)} cy={getY(w.weight)} r="3" fill="#10b981" stroke="#18181b" strokeWidth="1.5" />
+                        <circle cx={getX(i)} cy={getY(w.weight)} r="3" fill="#10b981" stroke="var(--color-chart-dot-stroke)" strokeWidth="1.5" />
                         {(i === 0 || i === sorted.length - 1 || sorted.length <= 7) && (
-                            <text x={getX(i)} y={getY(w.weight) - 8} textAnchor="middle" fill="#a1a1aa" fontSize="7" fontWeight="600">
+                            <text x={getX(i)} y={getY(w.weight) - 8} textAnchor="middle" fill="var(--color-chart-label)" fontSize="7" fontWeight="600">
                                 {w.weight}
                             </text>
                         )}
@@ -102,10 +104,10 @@ const WeightChart = ({ weights }: { weights: WeightEntry[] }) => {
                 {/* X-axis date labels */}
                 {sorted.length > 1 && (
                     <>
-                        <text x={0} y={chartH - 5} textAnchor="start" fill="#52525b" fontSize="7">
+                        <text x={0} y={chartH - 5} textAnchor="start" fill="var(--color-chart-axis)" fontSize="7">
                             {format(sorted[0].timestamp, 'MMM d')}
                         </text>
-                        <text x={chartW} y={chartH - 5} textAnchor="end" fill="#52525b" fontSize="7">
+                        <text x={chartW} y={chartH - 5} textAnchor="end" fill="var(--color-chart-axis)" fontSize="7">
                             {format(sorted[sorted.length - 1].timestamp, 'MMM d')}
                         </text>
                     </>
@@ -114,15 +116,84 @@ const WeightChart = ({ weights }: { weights: WeightEntry[] }) => {
 
             {/* Weight log entries */}
             {sorted.length <= 10 && (
-                <div className="mt-3 border-t border-white/5 pt-3 space-y-1.5">
+                <div className="mt-3 border-t border-th-border pt-3 space-y-1.5">
                     {[...sorted].reverse().map((w, i) => (
-                        <div key={i} className="flex justify-between text-xs text-zinc-400">
+                        <div key={i} className="flex justify-between text-xs text-th-secondary">
                             <span>{format(w.timestamp, 'EEE, MMM d')}</span>
-                            <span className="font-medium text-zinc-300">{w.weight} kg</span>
+                            <span className="font-medium text-th-primary">{w.weight} kg</span>
                         </div>
                     ))}
                 </div>
             )}
+        </div>
+    );
+};
+
+const CalorieChart = ({ groupedMeals, goalCals }: { groupedMeals: Record<string, DayGroup>; goalCals: number }) => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const chartW = 280, chartH = 100, padBottom = 22;
+    const innerH = chartH - padBottom;
+    const maxCals = goalCals * 1.3;
+    const barSlot = chartW / 7;
+    const barW = barSlot * 0.55;
+
+    const days = Array.from({ length: 7 }, (_, i) => {
+        const d = subDays(new Date(), 6 - i);
+        const date = format(d, 'yyyy-MM-dd');
+        return {
+            date,
+            label: i === 6 ? 'Today' : format(d, 'EEE'),
+            cals: groupedMeals[date]?.totalCals ?? 0,
+            isToday: date === today,
+        };
+    });
+
+    const getBarH = (cals: number) => cals === 0 ? 0 : Math.max(3, (Math.min(cals, maxCals) / maxCals) * innerH);
+    const goalY = innerH - (goalCals / maxCals) * innerH;
+
+    return (
+        <div className="bg-surface/60 border border-th-border rounded-2xl p-4 mb-3">
+            <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-bold text-th-muted uppercase tracking-widest">7-Day Calories</h3>
+                <span className="text-xs text-th-faint">Goal: {goalCals} kcal</span>
+            </div>
+            <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full" style={{ height: '110px' }}>
+                {/* Goal line */}
+                <line x1={0} x2={chartW} y1={goalY} y2={goalY}
+                    stroke="#10b981" strokeWidth="1" strokeDasharray="4 3" opacity="0.5" />
+                <text x={chartW - 2} y={goalY - 3} textAnchor="end"
+                    fill="var(--color-chart-label)" fontSize="7" opacity="0.7">goal</text>
+
+                {days.map((day, i) => {
+                    const bh = getBarH(day.cals);
+                    const bx = i * barSlot + (barSlot - barW) / 2;
+                    const by = innerH - bh;
+                    const color = day.cals === 0
+                        ? 'var(--color-chart-grid)'
+                        : day.cals > goalCals ? '#ef4444' : '#10b981';
+                    return (
+                        <g key={day.date}>
+                            <rect x={bx} y={bh === 0 ? innerH - 2 : by} width={barW} height={bh === 0 ? 2 : bh}
+                                fill={color} opacity={day.isToday ? 1 : 0.7} rx="2" />
+                            {day.isToday && day.cals > 0 && (
+                                <rect x={bx} y={by} width={barW} height={bh}
+                                    fill="none" stroke="#34d399" strokeWidth="1.5" rx="2" />
+                            )}
+                            {bh > 14 && (
+                                <text x={bx + barW / 2} y={by - 3} textAnchor="middle"
+                                    fill="var(--color-chart-label)" fontSize="7" fontWeight="600">
+                                    {day.cals}
+                                </text>
+                            )}
+                            <text x={bx + barW / 2} y={chartH - 4} textAnchor="middle"
+                                fill={day.isToday ? '#10b981' : 'var(--color-chart-axis)'} fontSize="7"
+                                fontWeight={day.isToday ? '700' : '400'}>
+                                {day.label}
+                            </text>
+                        </g>
+                    );
+                })}
+            </svg>
         </div>
     );
 };
@@ -134,6 +205,8 @@ export const History = () => {
     const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
     const [weights, setWeights] = useState<WeightEntry[]>([]);
     const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
+    const [deletingId, setDeletingId] = useState<number | null>(null);
+    const { settings } = useSettings();
 
     const loadData = async () => {
         const [allMeals, allWeights] = await Promise.all([getAllMeals(), getAllWeights()]);
@@ -197,13 +270,12 @@ export const History = () => {
 
     const toggleDay = (date: string) => setExpandedDays(prev => ({ ...prev, [date]: !prev[date] }));
 
-    const handleDelete = async (id: number) => {
-        if (!window.confirm('Delete this meal?')) return;
+    const handleDelete = async () => {
+        if (deletingId == null) return;
         try {
-            await deleteMeal(id);
-        } catch {
-            alert('Could not delete. Please try again.');
+            await deleteMeal(deletingId);
         } finally {
+            setDeletingId(null);
             loadData();
         }
     };
@@ -216,13 +288,13 @@ export const History = () => {
             className="flex flex-col h-[calc(100vh-9rem)] max-w-md mx-auto px-4 pb-20"
         >
             {/* View Mode Toggle */}
-            <div className="flex bg-zinc-800 rounded-xl p-1 mb-3 shrink-0">
+            <div className="flex bg-surface rounded-xl p-1 mb-3 shrink-0">
                 {(['daily', 'weekly', 'monthly'] as ViewMode[]).map(mode => (
                     <button
                         key={mode}
                         onClick={() => setViewMode(mode)}
                         className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all capitalize ${
-                            viewMode === mode ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-500'
+                            viewMode === mode ? 'bg-surface2 text-th-primary' : 'text-th-muted'
                         }`}
                     >
                         {mode}
@@ -231,10 +303,16 @@ export const History = () => {
             </div>
 
             <div className="overflow-y-auto flex-1 space-y-3">
+                {viewMode === 'daily' && (
+                    <>
+                        <CalorieChart groupedMeals={groupedMeals} goalCals={settings?.dailyCalories || 2000} />
+                        <WeightChart weights={weights} />
+                    </>
+                )}
                 {viewMode === 'daily' ? (
                     /* Daily View */
                     Object.keys(groupedMeals).length === 0 ? (
-                        <p className="text-center text-zinc-600 text-sm py-8">No meals in the last 30 days.</p>
+                        <p className="text-center text-th-faint text-sm py-8">No meals in the last 30 days.</p>
                     ) : (
                         <AnimatePresence>
                             {Object.entries(groupedMeals).map(([date, data]) => {
@@ -242,37 +320,37 @@ export const History = () => {
                                 const isToday = date === format(new Date(), 'yyyy-MM-dd');
                                 return (
                                     <motion.div key={date} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                                        className="bg-zinc-800/60 border border-white/5 rounded-2xl overflow-hidden">
+                                        className="bg-surface/60 border border-th-border rounded-2xl overflow-hidden">
                                         <button onClick={() => toggleDay(date)}
-                                            className="w-full px-4 py-3 flex items-center justify-between active:bg-zinc-700/30">
+                                            className="w-full px-4 py-3 flex items-center justify-between active:bg-surface2/30">
                                             <div className="flex flex-col items-start gap-0.5">
-                                                <span className="text-sm font-semibold text-zinc-200">
+                                                <span className="text-sm font-semibold text-th-primary">
                                                     {isToday ? 'Today' : format(new Date(date + 'T00:00:00'), 'EEE, MMM d')}
                                                 </span>
-                                                <div className="flex gap-3 text-xs text-zinc-500">
+                                                <div className="flex gap-3 text-xs text-th-muted">
                                                     <span>{data.totalCals} kcal</span>
                                                     <span>{data.totalProtein}g P</span>
                                                     <span>{data.totalCarbs}g C</span>
                                                     <span>{data.totalFiber}g F</span>
                                                 </div>
                                             </div>
-                                            {isExpanded ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
+                                            {isExpanded ? <ChevronUp className="w-4 h-4 text-th-muted" /> : <ChevronDown className="w-4 h-4 text-th-muted" />}
                                         </button>
                                         <AnimatePresence>
                                             {isExpanded && (
                                                 <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} className="overflow-hidden">
-                                                    <div className="border-t border-white/5 divide-y divide-white/5">
+                                                    <div className="border-t border-th-border divide-y divide-th-border">
                                                         {data.meals.map(meal => (
                                                             <div key={meal.id} className="px-4 py-3 flex items-center gap-3">
                                                                 <div className="flex-1 min-w-0">
-                                                                    <p className="text-zinc-200 text-sm font-medium truncate">{meal.parsed?.[0]?.food || meal.content}</p>
-                                                                    <p className="text-xs text-zinc-500">{format(meal.timestamp, 'h:mm a')}</p>
+                                                                    <p className="text-th-primary text-sm font-medium truncate">{meal.parsed?.[0]?.food || meal.content}</p>
+                                                                    <p className="text-xs text-th-muted">{format(meal.timestamp, 'h:mm a')}</p>
                                                                 </div>
-                                                                <span className="text-emerald-400 font-bold text-sm shrink-0">{meal.totalCalories} <span className="text-zinc-600 font-normal">kcal</span></span>
-                                                                <button onClick={() => setEditingMeal(meal)} className="p-1.5 text-zinc-600 active:text-blue-400 shrink-0">
+                                                                <span className="text-emerald-400 font-bold text-sm shrink-0">{meal.totalCalories} <span className="text-th-faint font-normal">kcal</span></span>
+                                                                <button onClick={() => setEditingMeal(meal)} className="p-1.5 text-th-faint active:text-blue-400 shrink-0">
                                                                     <Edit2 className="w-3.5 h-3.5" />
                                                                 </button>
-                                                                <button onClick={() => meal.id && handleDelete(meal.id)} className="p-1.5 text-zinc-600 active:text-red-400 shrink-0">
+                                                                <button onClick={() => meal.id && setDeletingId(meal.id)} className="p-1.5 text-th-faint active:text-red-400 shrink-0">
                                                                     <Trash2 className="w-3.5 h-3.5" />
                                                                 </button>
                                                             </div>
@@ -289,41 +367,40 @@ export const History = () => {
                 ) : (
                     /* Weekly / Monthly View */
                     summaries.length === 0 ? (
-                        <p className="text-center text-zinc-600 text-sm py-8">No data for this period.</p>
+                        <p className="text-center text-th-faint text-sm py-8">No data for this period.</p>
                     ) : (
                         <>
                         {summaries.map((s, i) => (
-                            <div key={i} className="bg-zinc-800/60 border border-white/5 rounded-2xl px-4 py-4">
-                                <h3 className="text-sm font-semibold text-zinc-200 mb-2">{s.label}</h3>
+                            <div key={i} className="bg-surface/60 border border-th-border rounded-2xl px-4 py-4">
+                                <h3 className="text-sm font-semibold text-th-primary mb-2">{s.label}</h3>
                                 <div className="grid grid-cols-2 gap-3 text-sm">
                                     <div>
-                                        <p className="text-xs text-zinc-500">Total Calories</p>
+                                        <p className="text-xs text-th-muted">Total Calories</p>
                                         <p className="font-bold text-emerald-400">{s.totalCals.toLocaleString()} kcal</p>
                                     </div>
                                     <div>
-                                        <p className="text-xs text-zinc-500">Daily Avg</p>
-                                        <p className="font-bold text-zinc-300">{s.avgCals} kcal</p>
+                                        <p className="text-xs text-th-muted">Daily Avg</p>
+                                        <p className="font-bold text-th-secondary">{s.avgCals} kcal</p>
                                     </div>
                                     <div>
-                                        <p className="text-xs text-zinc-500">Protein</p>
-                                        <p className="font-bold text-zinc-300">{s.totalProtein}g total · {s.days > 0 ? Math.round(s.totalProtein / s.days) : 0}g/day</p>
+                                        <p className="text-xs text-th-muted">Protein</p>
+                                        <p className="font-bold text-th-secondary">{s.totalProtein}g total · {s.days > 0 ? Math.round(s.totalProtein / s.days) : 0}g/day</p>
                                     </div>
                                     <div>
-                                        <p className="text-xs text-zinc-500">Carbs</p>
-                                        <p className="font-bold text-zinc-300">{s.totalCarbs}g total · {s.days > 0 ? Math.round(s.totalCarbs / s.days) : 0}g/day</p>
+                                        <p className="text-xs text-th-muted">Carbs</p>
+                                        <p className="font-bold text-th-secondary">{s.totalCarbs}g total · {s.days > 0 ? Math.round(s.totalCarbs / s.days) : 0}g/day</p>
                                     </div>
                                     <div>
-                                        <p className="text-xs text-zinc-500">Fiber</p>
-                                        <p className="font-bold text-zinc-300">{s.totalFiber}g total · {s.days > 0 ? Math.round(s.totalFiber / s.days) : 0}g/day</p>
+                                        <p className="text-xs text-th-muted">Fiber</p>
+                                        <p className="font-bold text-th-secondary">{s.totalFiber}g total · {s.days > 0 ? Math.round(s.totalFiber / s.days) : 0}g/day</p>
                                     </div>
                                     <div>
-                                        <p className="text-xs text-zinc-500">Days Logged</p>
-                                        <p className="font-bold text-zinc-300">{s.days} days</p>
+                                        <p className="text-xs text-th-muted">Days Logged</p>
+                                        <p className="font-bold text-th-secondary">{s.days} days</p>
                                     </div>
                                 </div>
                             </div>
                         ))}
-                        <WeightChart weights={weights} />
                         </>
                     )
                 )}
@@ -334,6 +411,14 @@ export const History = () => {
                 onClose={() => setEditingMeal(null)}
                 onSaved={loadData}
             />
+
+            {deletingId != null && (
+                <ConfirmModal
+                    message="Delete this meal?"
+                    onConfirm={handleDelete}
+                    onCancel={() => setDeletingId(null)}
+                />
+            )}
         </motion.div>
     );
 };

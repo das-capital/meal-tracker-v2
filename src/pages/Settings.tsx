@@ -1,22 +1,47 @@
 import { motion } from 'framer-motion';
-import { ArrowLeft, Save, Key, Target, Ruler, Trash2, AlertTriangle, Download, User, Cloud, Zap } from 'lucide-react';
+import { ArrowLeft, Save, Key, Target, Ruler, Trash2, AlertTriangle, Download, User, Cloud, Zap, Sun, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useSettings } from '../hooks/useSettings';
 import { resetAllData, getAllMeals, deleteMeal } from '../lib/db';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { subDays, format } from 'date-fns';
 import { AuthButton } from '../components/AuthButton';
 import { useAuth } from '../contexts/AuthContext';
 import clsx from 'clsx';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="flex flex-col gap-1.5">
-        <label className="text-xs text-zinc-400">{label}</label>
+        <label className="text-xs text-th-secondary">{label}</label>
         {children}
     </div>
 );
 
-const inputCls = "bg-zinc-900/50 rounded-xl border border-white/10 p-3 text-zinc-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm w-full";
+const inputCls = "bg-surface2 rounded-xl border border-th-border-strong p-3 text-th-primary focus:outline-none focus:ring-2 focus:ring-emerald-500/50 text-sm w-full";
+
+const NumericInput = ({ value, onChange, className, placeholder }: {
+    value: number; onChange: (v: number) => void; className: string; placeholder?: string;
+}) => {
+    const [text, setText] = useState(value === 0 ? '' : String(value));
+    useEffect(() => { setText(value === 0 ? '' : String(value)); }, [value]);
+    return (
+        <input
+            type="number"
+            value={text}
+            placeholder={placeholder ?? '0'}
+            onChange={e => {
+                setText(e.target.value);
+                const n = parseInt(e.target.value);
+                if (!isNaN(n) && n >= 0) onChange(n);
+            }}
+            onBlur={() => {
+                const n = parseInt(text);
+                if (isNaN(n) || n < 0) { setText(''); onChange(0); }
+            }}
+            className={className}
+        />
+    );
+};
 
 const PROVIDER_LABELS = {
     gemini: 'Google Gemini',
@@ -40,7 +65,9 @@ export const SettingsPage = () => {
     const navigate = useNavigate();
     const { settings, loading, updateSetting } = useSettings();
     const { user } = useAuth();
+    const isAdmin = user?.uid === import.meta.env.VITE_ADMIN_UID;
     const [saved, setSaved] = useState(false);
+    const [pendingDelete, setPendingDelete] = useState<number | 'all' | null>(null);
 
     const handleSave = () => {
         setSaved(true);
@@ -48,8 +75,6 @@ export const SettingsPage = () => {
     };
 
     const handleDeleteRange = async (days: number | 'all') => {
-        const label = days === 'all' ? 'ALL data' : `the last ${days === 1 ? '24 hours' : days === 7 ? '7 days' : '30 days'} of meals`;
-        if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return;
         if (days === 'all') {
             await resetAllData();
             window.location.reload();
@@ -79,9 +104,10 @@ export const SettingsPage = () => {
         URL.revokeObjectURL(url);
     };
 
-    if (loading || !settings) return <div className="p-8 text-zinc-400">Loading...</div>;
+    if (loading || !settings) return <div className="p-8 text-th-secondary">Loading...</div>;
 
     const provider = settings.provider || 'gemini';
+    const theme = settings.theme || 'dark';
 
     return (
         <motion.div
@@ -93,34 +119,63 @@ export const SettingsPage = () => {
             <div className="flex items-center gap-3 px-4 py-3 shrink-0">
                 <button
                     onClick={() => navigate(-1)}
-                    className="w-9 h-9 rounded-xl bg-zinc-800 border border-white/5 flex items-center justify-center active:scale-95 transition-transform"
+                    className="w-9 h-9 rounded-xl bg-surface border border-th-border flex items-center justify-center active:scale-95 transition-transform"
                 >
-                    <ArrowLeft className="w-4 h-4 text-zinc-400" />
+                    <ArrowLeft className="w-4 h-4 text-th-secondary" />
                 </button>
-                <h1 className="text-lg font-semibold text-zinc-100">Settings</h1>
+                <h1 className="text-lg font-semibold text-th-primary">Settings</h1>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 pb-8 space-y-8">
 
                 {/* Account / Cloud Sync */}
                 <section className="space-y-3">
-                    <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                    <h2 className="text-xs font-bold text-th-muted uppercase tracking-widest flex items-center gap-2">
                         <Cloud className="w-3.5 h-3.5" /> Account
                     </h2>
                     <AuthButton />
-                    <p className="text-xs text-zinc-600">
+                    <p className="text-xs text-th-faint">
                         {user
                             ? 'Your data syncs automatically across devices.'
                             : 'Sign in to back up and sync your data across devices.'}
                     </p>
                 </section>
 
+                {/* Appearance */}
+                <section className="space-y-3">
+                    <h2 className="text-xs font-bold text-th-muted uppercase tracking-widest flex items-center gap-2">
+                        <Sun className="w-3.5 h-3.5" /> Appearance
+                    </h2>
+                    <div className="grid grid-cols-2 gap-1 bg-surface2 rounded-xl border border-th-border-strong p-1">
+                        {(['light', 'dark'] as const).map(t => (
+                            <button
+                                key={t}
+                                onClick={() => {
+                                    updateSetting('theme', t);
+                                    document.documentElement.setAttribute('data-theme', t);
+                                    localStorage.setItem('meal-tracker-theme', t);
+                                    const meta = document.querySelector('meta[name="theme-color"]');
+                                    if (meta) meta.setAttribute('content', t === 'dark' ? '#09090b' : '#fafafa');
+                                }}
+                                className={clsx(
+                                    'py-2 rounded-lg text-xs font-medium transition-all capitalize',
+                                    theme === t
+                                        ? 'bg-emerald-500 text-zinc-900'
+                                        : 'text-th-secondary hover:text-th-primary'
+                                )}
+                            >
+                                {t === 'light' ? 'Light' : 'Dark'}
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
                 {/* AI Provider */}
                 <section className="space-y-3">
-                    <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                    <h2 className="text-xs font-bold text-th-muted uppercase tracking-widest flex items-center gap-2">
                         <Zap className="w-3.5 h-3.5" /> AI Provider
                     </h2>
-                    <div className="grid grid-cols-3 gap-1 bg-zinc-900/50 rounded-xl border border-white/10 p-1">
+                    <div className="grid grid-cols-3 gap-1 bg-surface2 rounded-xl border border-th-border-strong p-1">
                         {(['gemini', 'openai', 'groq'] as const).map(p => (
                             <button
                                 key={p}
@@ -129,7 +184,7 @@ export const SettingsPage = () => {
                                     'py-2 rounded-lg text-xs font-medium transition-all',
                                     provider === p
                                         ? 'bg-emerald-500 text-zinc-900'
-                                        : 'text-zinc-400 hover:text-zinc-200'
+                                        : 'text-th-secondary hover:text-th-primary'
                                 )}
                             >
                                 {PROVIDER_LABELS[p]}
@@ -140,7 +195,7 @@ export const SettingsPage = () => {
 
                 {/* API Key — provider-specific */}
                 <section className="space-y-3">
-                    <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                    <h2 className="text-xs font-bold text-th-muted uppercase tracking-widest flex items-center gap-2">
                         <Key className="w-3.5 h-3.5" /> {PROVIDER_LABELS[provider]} API Key
                     </h2>
                     <Field label={`API Key`}>
@@ -164,90 +219,87 @@ export const SettingsPage = () => {
 
                 {/* Daily Goals */}
                 <section className="space-y-3">
-                    <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                    <h2 className="text-xs font-bold text-th-muted uppercase tracking-widest flex items-center gap-2">
                         <Target className="w-3.5 h-3.5" /> Daily Goals
                     </h2>
                     <div className="grid grid-cols-2 gap-3">
                         <Field label="Calories (kcal)">
-                            <input type="number" value={settings.dailyCalories}
-                                onChange={e => updateSetting('dailyCalories', parseInt(e.target.value) || 0)}
-                                className={inputCls} />
+                            <NumericInput value={settings.dailyCalories} onChange={v => updateSetting('dailyCalories', v)} className={inputCls} />
                         </Field>
                         <Field label="Protein (g)">
-                            <input type="number" value={settings.dailyProtein}
-                                onChange={e => updateSetting('dailyProtein', parseInt(e.target.value) || 0)}
-                                className={inputCls} />
+                            <NumericInput value={settings.dailyProtein} onChange={v => updateSetting('dailyProtein', v)} className={inputCls} />
+                        </Field>
+                        <Field label="Fat (g)">
+                            <NumericInput value={settings.dailyFat ?? 65} onChange={v => updateSetting('dailyFat', v)} className={inputCls} />
                         </Field>
                         <Field label="Carbs (g)">
-                            <input type="number" value={settings.dailyCarbs}
-                                onChange={e => updateSetting('dailyCarbs', parseInt(e.target.value) || 0)}
-                                className={inputCls} />
+                            <NumericInput value={settings.dailyCarbs} onChange={v => updateSetting('dailyCarbs', v)} className={inputCls} />
                         </Field>
                         <Field label="Fiber (g)">
-                            <input type="number" value={settings.dailyFiber}
-                                onChange={e => updateSetting('dailyFiber', parseInt(e.target.value) || 0)}
-                                className={inputCls} />
+                            <NumericInput value={settings.dailyFiber} onChange={v => updateSetting('dailyFiber', v)} className={inputCls} />
                         </Field>
                     </div>
                 </section>
 
                 {/* Profile */}
                 <section className="space-y-3">
-                    <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                    <h2 className="text-xs font-bold text-th-muted uppercase tracking-widest flex items-center gap-2">
                         <User className="w-3.5 h-3.5" /> Profile
                     </h2>
                     <div className="grid grid-cols-3 gap-3">
                         <Field label="Age">
-                            <input type="number" value={settings.profileAge || ''}
-                                onChange={e => updateSetting('profileAge', parseInt(e.target.value) || 0)}
-                                placeholder="0" className={inputCls} />
+                            <NumericInput value={settings.profileAge || 0} onChange={v => updateSetting('profileAge', v)} className={inputCls} />
                         </Field>
                         <Field label="Weight (kg)">
-                            <input type="number" value={settings.profileWeight || ''}
-                                onChange={e => updateSetting('profileWeight', parseInt(e.target.value) || 0)}
-                                placeholder="0" className={inputCls} />
+                            <NumericInput value={settings.profileWeight || 0} onChange={v => updateSetting('profileWeight', v)} className={inputCls} />
                         </Field>
                         <Field label="Height (cm)">
-                            <input type="number" value={settings.profileHeight || ''}
-                                onChange={e => updateSetting('profileHeight', parseInt(e.target.value) || 0)}
-                                placeholder="0" className={inputCls} />
+                            <NumericInput value={settings.profileHeight || 0} onChange={v => updateSetting('profileHeight', v)} className={inputCls} />
                         </Field>
                     </div>
                 </section>
 
                 {/* Portion Calibration */}
                 <section className="space-y-3">
-                    <h2 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                    <h2 className="text-xs font-bold text-th-muted uppercase tracking-widest flex items-center gap-2">
                         <Ruler className="w-3.5 h-3.5" /> Portion Sizes
                     </h2>
                     <div className="grid grid-cols-2 gap-3">
                         <Field label="Bowl — liquid (ml)">
-                            <input type="number" value={settings.unitBowlLiquid}
-                                onChange={e => updateSetting('unitBowlLiquid', parseInt(e.target.value) || 0)}
-                                className={inputCls} />
+                            <NumericInput value={settings.unitBowlLiquid} onChange={v => updateSetting('unitBowlLiquid', v)} className={inputCls} />
                         </Field>
                         <Field label="Bowl — solid (g)">
-                            <input type="number" value={settings.unitBowlSolid}
-                                onChange={e => updateSetting('unitBowlSolid', parseInt(e.target.value) || 0)}
-                                className={inputCls} />
+                            <NumericInput value={settings.unitBowlSolid} onChange={v => updateSetting('unitBowlSolid', v)} className={inputCls} />
                         </Field>
                         <Field label="Tablespoon (g)">
-                            <input type="number" value={settings.unitTbsp}
-                                onChange={e => updateSetting('unitTbsp', parseInt(e.target.value) || 0)}
-                                className={inputCls} />
+                            <NumericInput value={settings.unitTbsp} onChange={v => updateSetting('unitTbsp', v)} className={inputCls} />
                         </Field>
                         <Field label="Teaspoon (g)">
-                            <input type="number" value={settings.unitTsp}
-                                onChange={e => updateSetting('unitTsp', parseInt(e.target.value) || 0)}
-                                className={inputCls} />
+                            <NumericInput value={settings.unitTsp} onChange={v => updateSetting('unitTsp', v)} className={inputCls} />
                         </Field>
                     </div>
                 </section>
 
+                {/* Admin */}
+                {isAdmin && (
+                    <section className="space-y-3">
+                        <h2 className="text-xs font-bold text-th-muted uppercase tracking-widest flex items-center gap-2">
+                            <Shield className="w-3.5 h-3.5" /> Admin
+                        </h2>
+                        <Field label="Hosted AI requests / day">
+                            <NumericInput
+                                value={settings.hostedDailyLimit || 30}
+                                onChange={v => updateSetting('hostedDailyLimit', v)}
+                                className={inputCls}
+                            />
+                        </Field>
+                    </section>
+                )}
+
                 {/* Save */}
                 <button
                     onClick={handleSave}
-                    className="w-full h-12 bg-zinc-800 rounded-xl flex items-center justify-center gap-2 font-medium text-zinc-200 active:scale-95 transition-transform border border-white/5"
+                    className="w-full h-12 bg-surface2 rounded-xl flex items-center justify-center gap-2 font-medium text-th-primary active:scale-95 transition-transform border border-th-border"
                 >
                     <Save className="w-4 h-4" />
                     {saved ? 'Saved!' : 'Save Changes'}
@@ -256,7 +308,7 @@ export const SettingsPage = () => {
                 {/* Data Export */}
                 <button
                     onClick={handleExport}
-                    className="w-full h-12 bg-zinc-800 rounded-xl flex items-center justify-center gap-2 font-medium text-zinc-200 active:scale-95 transition-transform border border-white/5"
+                    className="w-full h-12 bg-surface2 rounded-xl flex items-center justify-center gap-2 font-medium text-th-primary active:scale-95 transition-transform border border-th-border"
                 >
                     <Download className="w-4 h-4" />
                     Export Data (JSON)
@@ -267,7 +319,7 @@ export const SettingsPage = () => {
                     <h2 className="text-xs font-bold text-red-500 uppercase tracking-widest flex items-center gap-2">
                         <AlertTriangle className="w-3.5 h-3.5" /> Danger Zone
                     </h2>
-                    <p className="text-xs text-zinc-500">Delete meal history from a time range:</p>
+                    <p className="text-xs text-th-muted">Delete meal history from a time range:</p>
                     <div className="grid grid-cols-3 gap-2">
                         {([
                             { label: 'Last 24h', days: 1 },
@@ -276,7 +328,7 @@ export const SettingsPage = () => {
                         ] as const).map(({ label, days }) => (
                             <button
                                 key={days}
-                                onClick={() => handleDeleteRange(days)}
+                                onClick={() => setPendingDelete(days)}
                                 className="py-2 bg-red-500/10 border border-red-500/20 rounded-xl text-xs font-medium text-red-400 active:scale-95 transition-transform"
                             >
                                 {label}
@@ -284,7 +336,7 @@ export const SettingsPage = () => {
                         ))}
                     </div>
                     <button
-                        onClick={() => handleDeleteRange('all')}
+                        onClick={() => setPendingDelete('all')}
                         className="w-full h-12 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center justify-center gap-2 font-medium text-red-500 active:scale-95 transition-transform"
                     >
                         <Trash2 className="w-4 h-4" />
@@ -293,6 +345,17 @@ export const SettingsPage = () => {
                 </div>
 
             </div>
+
+            {pendingDelete != null && (
+                <ConfirmModal
+                    message={pendingDelete === 'all'
+                        ? 'Delete ALL data? This cannot be undone.'
+                        : `Delete the last ${pendingDelete === 1 ? '24 hours' : pendingDelete === 7 ? '7 days' : '30 days'} of meals? This cannot be undone.`}
+                    confirmLabel="Delete"
+                    onConfirm={() => { handleDeleteRange(pendingDelete); setPendingDelete(null); }}
+                    onCancel={() => setPendingDelete(null)}
+                />
+            )}
         </motion.div>
     );
 };

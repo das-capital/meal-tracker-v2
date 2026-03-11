@@ -27,14 +27,14 @@ export const AuthButton = () => {
 
     if (user) {
         return (
-            <div className="flex items-center gap-3 bg-zinc-900/50 rounded-xl border border-white/10 p-3">
+            <div className="flex items-center gap-3 bg-surface2 rounded-xl border border-th-border-strong p-3">
                 <div className="flex items-center gap-2.5 flex-1 min-w-0">
                     {user.photoURL ? (
                         <img
                             src={user.photoURL}
                             alt="avatar"
                             referrerPolicy="no-referrer"
-                            className="w-8 h-8 rounded-full border border-white/10 shrink-0"
+                            className="w-8 h-8 rounded-full border border-th-border-strong shrink-0"
                         />
                     ) : (
                         <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
@@ -44,13 +44,13 @@ export const AuthButton = () => {
                         </div>
                     )}
                     <div className="min-w-0">
-                        <p className="text-sm font-medium text-zinc-200 truncate">{user.displayName}</p>
-                        <p className="text-xs text-zinc-500 truncate">{user.email}</p>
+                        <p className="text-sm font-medium text-th-primary truncate">{user.displayName}</p>
+                        <p className="text-xs text-th-muted truncate">{user.email}</p>
                     </div>
                 </div>
                 <button
                     onClick={signOut}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-white/5 text-xs font-medium text-zinc-400 active:scale-95 transition-transform shrink-0"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface2 border border-th-border text-xs font-medium text-th-secondary active:scale-95 transition-transform shrink-0"
                 >
                     <LogOut className="w-3 h-3" />
                     Sign out
@@ -62,7 +62,7 @@ export const AuthButton = () => {
     return (
         <button
             onClick={signIn}
-            className="w-full h-12 bg-white rounded-xl flex items-center justify-center gap-2.5 font-medium text-zinc-800 active:scale-95 transition-transform text-sm"
+            className="w-full h-12 bg-zinc-100 border border-zinc-300 rounded-xl flex items-center justify-center gap-2.5 font-medium text-zinc-800 active:scale-95 transition-transform text-sm"
         >
             <GoogleIcon />
             Sign in with Google

@@ -58,8 +58,10 @@ export interface WeightEntry {
 export interface UserSettings {
     apiKey: string;
     provider: 'gemini' | 'openai' | 'groq';
+    theme: 'dark' | 'light';
     dailyCalories: number;
     dailyProtein: number;
+    dailyFat: number;
     dailyCarbs: number;
     dailyFiber: number;
     unitBowlLiquid: number;
@@ -69,13 +71,16 @@ export interface UserSettings {
     profileAge: number;
     profileWeight: number;
     profileHeight: number;
+    hostedDailyLimit?: number;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
     apiKey: '',
     provider: 'gemini',
+    theme: 'dark',
     dailyCalories: 2000,
     dailyProtein: 120,
+    dailyFat: 65,
     dailyCarbs: 250,
     dailyFiber: 30,
     unitBowlLiquid: 250,

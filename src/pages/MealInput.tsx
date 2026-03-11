@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, Send, Sparkles, CheckCircle, AlertCircle, Star, Lightbulb, ChefHat, Camera, ExternalLink, ChevronDown, ChevronUp, Edit2, Eraser, Barcode } from 'lucide-react';
-import canvasConfetti from 'canvas-confetti';
-import { processInput, getMealSuggestion, processLabelImage } from '../lib/ai-parser';
+import { Mic, Send, Sparkles, CheckCircle, AlertCircle, Star, ChefHat, Camera, ExternalLink, ChevronDown, ChevronUp, Edit2, Eraser, Barcode, Menu, Plus, Droplets } from 'lucide-react';
+import { processInput, processLabelImage } from '../lib/ai-parser';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { fetchByBarcode, type OFFProduct } from '../lib/openfoodfacts';
 import { useMeals } from '../hooks/useMeals';
@@ -19,7 +18,7 @@ interface ChatMessage {
     id: number;
     role: 'user' | 'assistant';
     text: string;
-    type?: 'meal' | 'chat' | 'error' | 'suggestion' | 'weight' | 'favourite_saved' | 'barcode_found';
+    type?: 'meal' | 'chat' | 'error' | 'weight' | 'favourite_saved' | 'barcode_found';
     mealData?: { food: string; calories: number; protein: number; fat: number; carbs: number; fiber: number };
     mealId?: number;
     imagePreview?: string;
@@ -62,12 +61,13 @@ export const MealInput = () => {
     const [isListening, setIsListening] = useState(false);
     const [showFavourites, setShowFavourites] = useState(false);
     const [showRecipes, setShowRecipes] = useState(false);
-    const [hasSuggested, setHasSuggested] = useState(false);
     const [pendingImage, setPendingImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null);
     const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
     const [pendingBarcode, setPendingBarcode] = useState<OFFProduct | null>(null);
     const [editingMsgId, setEditingMsgId] = useState<number | null>(null);
     const [draftMacros, setDraftMacros] = useState<{ calories: number; protein: number; fat: number; carbs: number; fiber: number } | null>(null);
+    const [showChoicesMenu, setShowChoicesMenu] = useState(false);
+    const [showWaterPicker, setShowWaterPicker] = useState(false);
 
     // Onboarding state
     const [onboardingExpand, setOnboardingExpand] = useState<null | 'openai-groq' | 'gemini'>(null);
@@ -96,7 +96,6 @@ export const MealInput = () => {
                 };
                 await addMeal(`${weight}g of ${recipe.name}`, mealData);
                 await refreshMeals();
-                fireConfetti();
                 addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData });
             } catch {
                 addMsg({ role: 'assistant', type: 'error', text: 'Failed to log recipe. Please try again.' });
@@ -125,15 +124,6 @@ export const MealInput = () => {
         recognition.onerror = () => setIsListening(false);
         recognition.onend = () => setIsListening(false);
         recognition.start();
-    };
-
-    const triggerSuggestion = async () => {
-        if (hasSuggested) return;
-        setHasSuggested(true);
-        const suggestion = await getMealSuggestion();
-        if (suggestion) {
-            addMsg({ role: 'assistant', type: 'suggestion', text: suggestion });
-        }
     };
 
     const compressImage = (file: File): Promise<{ base64: string; mimeType: string; preview: string }> =>
@@ -230,9 +220,7 @@ export const MealInput = () => {
                 };
                 const mealId = await addMeal(text, mealData);
                 setPendingBarcode(null);
-                fireConfetti();
                 addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData, mealId });
-                triggerSuggestion();
                 return;
             }
 
@@ -243,16 +231,12 @@ export const MealInput = () => {
 
             if (result.type === 'meal') {
                 const mealId = await addMeal(text, result.data);
-                fireConfetti();
                 addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData: result.data, mealId });
-                triggerSuggestion();
             } else if (result.type === 'meal_list') {
                 for (const item of result.items) {
                     const mealId = await addMeal(text, item);
                     addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData: item, mealId });
                 }
-                fireConfetti();
-                triggerSuggestion();
             } else if (result.type === 'favourite_save') {
                 if (meals.length > 0) {
                     const lastMeal = meals[meals.length - 1];
@@ -275,14 +259,11 @@ export const MealInput = () => {
                 const favs = await getAllFavourites();
                 const fav = favs.find(f => f.name.toLowerCase() === result.name.toLowerCase());
                 if (fav) {
-                    if (window.confirm(`Log "${fav.name}" as a meal?`)) {
-                        await addMeal(fav.content, fav.parsed[0]);
-                        fireConfetti();
-                        addMsg({
-                            role: 'assistant', type: 'meal', text: `Logged favourite "${fav.name}"!`,
-                            mealData: fav.parsed[0],
-                        });
-                    }
+                    await addMeal(fav.content, fav.parsed[0]);
+                    addMsg({
+                        role: 'assistant', type: 'meal', text: `Logged favourite "${fav.name}"!`,
+                        mealData: fav.parsed[0],
+                    });
                 } else {
                     addMsg({ role: 'assistant', type: 'error', text: `No favourite named "${result.name}" found.` });
                 }
@@ -300,9 +281,7 @@ export const MealInput = () => {
                         fiber: Math.round(recipe.totalFiber * ratio),
                     };
                     await addMeal(`${result.weight}g of ${recipe.name}`, mealData);
-                    fireConfetti();
                     addMsg({ role: 'assistant', type: 'meal', text: 'Logged!', mealData });
-                    triggerSuggestion();
                 } else {
                     addMsg({ role: 'assistant', type: 'error', text: `No recipe named "${result.name}" found.` });
                 }
@@ -349,11 +328,18 @@ export const MealInput = () => {
     const handleLogFavourite = async (fav: Favourite) => {
         await addMeal(fav.content, fav.parsed[0]);
         await refreshMeals();
-        fireConfetti();
         addMsg({
             role: 'assistant', type: 'meal', text: `Logged favourite "${fav.name}"!`,
             mealData: fav.parsed[0],
         });
+    };
+
+    const handleLogWater = async (ml: number) => {
+        setShowChoicesMenu(false);
+        setShowWaterPicker(false);
+        const waterMacros = { food: 'Water', calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 };
+        await addMeal(`${ml}ml water`, waterMacros);
+        addMsg({ role: 'assistant', type: 'chat', text: `💧 ${ml}ml water logged.` });
     };
 
     const handleClearChat = () => {
@@ -375,15 +361,6 @@ export const MealInput = () => {
         setOnboardingExpand(null);
     };
 
-    const fireConfetti = () => {
-        const end = Date.now() + 1500;
-        (function frame() {
-            canvasConfetti({ particleCount: 6, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#10b981', '#34d399', '#fff'] });
-            canvasConfetti({ particleCount: 6, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#10b981', '#34d399', '#fff'] });
-            if (Date.now() < end) requestAnimationFrame(frame);
-        }());
-    };
-
     // Signed-in users get hosted AI — no onboarding needed
     const showOnboarding = !!settings && !settings.apiKey && !user;
 
@@ -401,7 +378,7 @@ export const MealInput = () => {
                     <div className="flex justify-end">
                         <button
                             onClick={handleClearChat}
-                            className="flex items-center gap-1 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                            className="flex items-center gap-1 text-xs text-th-faint hover:text-th-secondary transition-colors"
                         >
                             <Eraser className="w-3 h-3" />
                             Clear chat
@@ -414,11 +391,11 @@ export const MealInput = () => {
                     <motion.div
                         initial={{ opacity: 0, y: -8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="bg-zinc-800/90 border border-white/10 rounded-2xl p-4 space-y-3"
+                        className="bg-surface2/90 border border-th-border-strong rounded-2xl p-4 space-y-3"
                     >
                         <div>
-                            <p className="text-sm font-semibold text-zinc-200">Connect an AI to unlock smart logging</p>
-                            <p className="text-xs text-zinc-400 mt-1 leading-relaxed">
+                            <p className="text-sm font-semibold text-th-primary">Connect an AI to unlock smart logging</p>
+                            <p className="text-xs text-th-secondary mt-1 leading-relaxed">
                                 An API key lets the app understand natural food descriptions. Without one, you can still log common foods — but chatting, saving favourites, and recognising unknown foods requires AI.
                             </p>
                         </div>
@@ -427,13 +404,13 @@ export const MealInput = () => {
                             {/* Option 1: OpenAI / Groq */}
                             <button
                                 onClick={() => setOnboardingExpand(v => v === 'openai-groq' ? null : 'openai-groq')}
-                                className="w-full flex items-center justify-between bg-zinc-700/50 hover:bg-zinc-700 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-zinc-200 transition-colors"
+                                className="w-full flex items-center justify-between bg-surface2/50 hover:bg-surface2 border border-th-border-strong rounded-xl px-3 py-2.5 text-sm text-th-primary transition-colors"
                             >
                                 <span>I have an OpenAI / Groq subscription</span>
-                                {onboardingExpand === 'openai-groq' ? <ChevronUp className="w-4 h-4 text-zinc-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />}
+                                {onboardingExpand === 'openai-groq' ? <ChevronUp className="w-4 h-4 text-th-secondary shrink-0" /> : <ChevronDown className="w-4 h-4 text-th-secondary shrink-0" />}
                             </button>
                             {onboardingExpand === 'openai-groq' && (
-                                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 space-y-3">
+                                <div className="bg-surface2 border border-th-border rounded-xl p-3 space-y-3">
                                     <div className="grid grid-cols-2 gap-1">
                                         {(['openai', 'groq'] as const).map(p => (
                                             <button
@@ -443,7 +420,7 @@ export const MealInput = () => {
                                                     'py-2 rounded-lg text-xs font-medium transition-all',
                                                     onboardingProvider === p
                                                         ? 'bg-emerald-500 text-zinc-900'
-                                                        : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+                                                        : 'bg-surface2 text-th-secondary hover:text-th-primary'
                                                 )}
                                             >
                                                 {p === 'openai' ? 'OpenAI' : 'Groq'}
@@ -464,7 +441,7 @@ export const MealInput = () => {
                                         value={onboardingKey}
                                         onChange={e => setOnboardingKey(e.target.value)}
                                         placeholder={onboardingProvider === 'openai' ? 'sk-...' : 'gsk_...'}
-                                        className="w-full bg-zinc-800 border border-white/10 rounded-xl p-2.5 text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                                        className="w-full bg-surface2 border border-th-border-strong rounded-xl p-2.5 text-th-primary text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
                                     />
                                     <button
                                         onClick={() => handleOnboardingSave(onboardingProvider)}
@@ -479,13 +456,13 @@ export const MealInput = () => {
                             {/* Option 2: Gemini */}
                             <button
                                 onClick={() => setOnboardingExpand(v => v === 'gemini' ? null : 'gemini')}
-                                className="w-full flex items-center justify-between bg-zinc-700/50 hover:bg-zinc-700 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-zinc-200 transition-colors"
+                                className="w-full flex items-center justify-between bg-surface2/50 hover:bg-surface2 border border-th-border-strong rounded-xl px-3 py-2.5 text-sm text-th-primary transition-colors"
                             >
                                 <span>Get a free key from Google AI Studio</span>
-                                {onboardingExpand === 'gemini' ? <ChevronUp className="w-4 h-4 text-zinc-400 shrink-0" /> : <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />}
+                                {onboardingExpand === 'gemini' ? <ChevronUp className="w-4 h-4 text-th-secondary shrink-0" /> : <ChevronDown className="w-4 h-4 text-th-secondary shrink-0" />}
                             </button>
                             {onboardingExpand === 'gemini' && (
-                                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3 space-y-3">
+                                <div className="bg-surface2 border border-th-border rounded-xl p-3 space-y-3">
                                     <a
                                         href="https://aistudio.google.com"
                                         target="_blank"
@@ -500,7 +477,7 @@ export const MealInput = () => {
                                         value={onboardingKey}
                                         onChange={e => setOnboardingKey(e.target.value)}
                                         placeholder="AIza..."
-                                        className="w-full bg-zinc-800 border border-white/10 rounded-xl p-2.5 text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                                        className="w-full bg-surface2 border border-th-border-strong rounded-xl p-2.5 text-th-primary text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
                                     />
                                     <button
                                         onClick={() => handleOnboardingSave('gemini')}
@@ -516,13 +493,13 @@ export const MealInput = () => {
                         {/* What is an API key? */}
                         <button
                             onClick={() => setShowApiKeyExplain(v => !v)}
-                            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-400 transition-colors"
+                            className="flex items-center gap-1 text-xs text-th-muted hover:text-th-secondary transition-colors"
                         >
                             {showApiKeyExplain ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                             What is an API key?
                         </button>
                         {showApiKeyExplain && (
-                            <p className="text-xs text-zinc-500 leading-relaxed">
+                            <p className="text-xs text-th-muted leading-relaxed">
                                 An API key is a secret code that lets this app communicate with an AI service. It's like a password — keep it private. The key is stored only on your device and used directly from your browser; it's never sent to any server other than the AI provider.
                             </p>
                         )}
@@ -532,7 +509,7 @@ export const MealInput = () => {
                 {messages.length === 0 && !showOnboarding && (
                     <div className="flex flex-col items-center justify-center h-full gap-3 opacity-40">
                         <Sparkles className="w-8 h-8 text-emerald-400" />
-                        <p className="text-zinc-400 text-center text-sm max-w-[220px]">
+                        <p className="text-th-secondary text-center text-sm max-w-[220px]">
                             Tell me what you ate, ask about your nutrition, or log your weight.
                         </p>
                     </div>
@@ -547,7 +524,7 @@ export const MealInput = () => {
                             className={clsx('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
                         >
                             {msg.role === 'user' ? (
-                                <div className="bg-emerald-500/20 border border-emerald-500/30 text-zinc-200 rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[80%] text-sm">
+                                <div className="bg-emerald-500/20 border border-emerald-500/30 text-th-primary rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[80%] text-sm">
                                     {msg.imagePreview && (
                                         <img
                                             src={msg.imagePreview}
@@ -558,10 +535,10 @@ export const MealInput = () => {
                                     {msg.text && msg.text}
                                 </div>
                             ) : msg.type === 'meal' && msg.mealData ? (
-                                <div className="bg-zinc-800 border border-white/5 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[80%]">
+                                <div className="bg-surface2 border border-th-border rounded-2xl rounded-tl-sm px-4 py-3 max-w-[80%]">
                                     <div className="flex items-center gap-2 mb-2">
                                         <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-                                        <span className="text-sm font-semibold text-zinc-200">{msg.mealData.food}</span>
+                                        <span className="text-sm font-semibold text-th-primary">{msg.mealData.food}</span>
                                     </div>
 
                                     {editingMsgId !== msg.id && (
@@ -573,8 +550,8 @@ export const MealInput = () => {
                                                 { label: 'Fiber', val: msg.mealData.fiber, unit: 'g' },
                                             ].map(m => (
                                                 <div key={m.label}>
-                                                    <p className="text-xs text-zinc-500">{m.label}</p>
-                                                    <p className="text-sm font-bold text-zinc-300">{m.val}{m.unit}</p>
+                                                    <p className="text-xs text-th-muted">{m.label}</p>
+                                                    <p className="text-sm font-bold text-th-secondary">{m.val}{m.unit}</p>
                                                 </div>
                                             ))}
                                         </div>
@@ -591,14 +568,14 @@ export const MealInput = () => {
                                                     { key: 'fiber',    label: 'Fiber (g)' },
                                                 ] as const).map(({ key, label }) => (
                                                     <div key={key}>
-                                                        <p className="text-xs text-zinc-500 mb-0.5">{label}</p>
+                                                        <p className="text-xs text-th-muted mb-0.5">{label}</p>
                                                         <input
                                                             type="number"
                                                             value={draftMacros[key]}
                                                             onChange={e => setDraftMacros(prev =>
                                                                 prev ? { ...prev, [key]: parseInt(e.target.value) || 0 } : prev
                                                             )}
-                                                            className="w-full bg-zinc-700 border border-white/10 rounded-lg px-2 py-1 text-zinc-200 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                                                            className="w-full bg-surface2 border border-th-border-strong rounded-lg px-2 py-1 text-th-primary text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
                                                         />
                                                     </div>
                                                 ))}
@@ -612,7 +589,7 @@ export const MealInput = () => {
                                                 </button>
                                                 <button
                                                     onClick={() => { setEditingMsgId(null); setDraftMacros(null); }}
-                                                    className="flex-1 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-zinc-300 text-xs transition-colors"
+                                                    className="flex-1 py-1.5 bg-surface2 hover:bg-surface rounded-lg text-th-secondary text-xs transition-colors"
                                                 >
                                                     Cancel
                                                 </button>
@@ -632,17 +609,12 @@ export const MealInput = () => {
                                                     fiber:    msg.mealData!.fiber,
                                                 });
                                             }}
-                                            className="mt-2 flex items-center gap-1 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                                            className="mt-2 flex items-center gap-1 text-xs text-th-faint hover:text-th-secondary transition-colors"
                                         >
                                             <Edit2 className="w-3 h-3" />
                                             Edit macros
                                         </button>
                                     )}
-                                </div>
-                            ) : msg.type === 'suggestion' ? (
-                                <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%] flex items-start gap-2">
-                                    <Lightbulb className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                                    <p className="text-sm text-amber-200 leading-relaxed">{msg.text}</p>
                                 </div>
                             ) : msg.type === 'favourite_saved' ? (
                                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[80%] flex items-center gap-2">
@@ -655,14 +627,14 @@ export const MealInput = () => {
                                     <p className="text-sm text-blue-200">{msg.text}</p>
                                 </div>
                             ) : msg.type === 'barcode_found' && msg.barcodeProduct ? (
-                                <div className="bg-zinc-800 border border-white/5 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
+                                <div className="bg-surface2 border border-th-border rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
                                     <div className="flex items-center gap-2 mb-2">
                                         <Barcode className="w-4 h-4 text-emerald-400 shrink-0" />
-                                        <span className="text-sm font-semibold text-zinc-200 leading-tight">
+                                        <span className="text-sm font-semibold text-th-primary leading-tight">
                                             {[msg.barcodeProduct.brand, msg.barcodeProduct.name].filter(Boolean).join(' – ') || 'Scanned product'}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-zinc-500 mb-2">Per 100g</p>
+                                    <p className="text-xs text-th-muted mb-2">Per 100g</p>
                                     <div className="grid grid-cols-4 gap-2 text-center mb-3">
                                         {[
                                             { label: 'Cal', val: msg.barcodeProduct.per100kcal },
@@ -671,12 +643,12 @@ export const MealInput = () => {
                                             { label: 'Fat', val: msg.barcodeProduct.per100fat },
                                         ].map(m => (
                                             <div key={m.label}>
-                                                <p className="text-xs text-zinc-500">{m.label}</p>
-                                                <p className="text-sm font-bold text-zinc-300">{m.val}</p>
+                                                <p className="text-xs text-th-muted">{m.label}</p>
+                                                <p className="text-sm font-bold text-th-secondary">{m.val}</p>
                                             </div>
                                         ))}
                                     </div>
-                                    <p className="text-xs text-zinc-500">Now type how much you had (e.g. 200g)</p>
+                                    <p className="text-xs text-th-muted">Now type how much you had (e.g. 200g)</p>
                                 </div>
                             ) : msg.type === 'error' ? (
                                 msg.text.startsWith('invalid_key_') ? (
@@ -717,7 +689,7 @@ export const MealInput = () => {
                                         <div className="flex items-start gap-2">
                                             <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                                             <p className="text-sm text-red-300">
-                                                You've used your 30 free AI requests today. Add your own API key in Settings to continue.
+                                                You've used your free AI requests for today. Add your own API key in Settings to continue.
                                             </p>
                                         </div>
                                         <button onClick={() => navigate('/settings')} className="text-xs text-red-400 underline mt-1 ml-6">
@@ -725,11 +697,11 @@ export const MealInput = () => {
                                         </button>
                                     </div>
                                 ) : msg.text === 'sign_in_for_hosted_key' ? (
-                                    <div className="bg-zinc-800 border border-white/10 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
+                                    <div className="bg-surface2 border border-th-border-strong rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
                                         <div className="flex items-start gap-2">
                                             <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                                            <p className="text-sm text-zinc-300">
-                                                Sign in with Google for 30 free AI requests/day — no API key needed.
+                                            <p className="text-sm text-th-secondary">
+                                                Sign in with Google for free daily AI requests — no API key needed.
                                             </p>
                                         </div>
                                         <button onClick={signIn} className="text-xs text-emerald-400 underline mt-1 ml-6">
@@ -743,7 +715,7 @@ export const MealInput = () => {
                                     </div>
                                 )
                             ) : (
-                                <div className="bg-zinc-800 border border-white/5 text-zinc-200 rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[80%] text-sm leading-relaxed">
+                                <div className="bg-surface2 border border-th-border text-th-primary rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[80%] text-sm leading-relaxed">
                                     {msg.text}
                                 </div>
                             )}
@@ -753,7 +725,7 @@ export const MealInput = () => {
 
                 {isProcessing && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
-                        <div className="bg-zinc-800 border border-white/5 rounded-2xl rounded-tl-sm px-4 py-3 flex gap-1.5 items-center">
+                        <div className="bg-surface2 border border-th-border rounded-2xl rounded-tl-sm px-4 py-3 flex gap-1.5 items-center">
                             {[0, 1, 2].map(i => (
                                 <div key={i} className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                             ))}
@@ -775,41 +747,97 @@ export const MealInput = () => {
                     className="hidden"
                     onChange={handleImageSelect}
                 />
-                <div className="flex items-end gap-2 bg-zinc-800 border border-white/10 rounded-2xl px-3 py-2">
-                    <button
-                        onClick={() => setShowFavourites(true)}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center text-amber-400/60 hover:text-amber-400 transition-colors shrink-0"
-                    >
-                        <Star className="w-4 h-4" />
-                    </button>
-                    <button
-                        onClick={() => setShowRecipes(true)}
-                        className="w-8 h-8 rounded-xl flex items-center justify-center text-emerald-400/60 hover:text-emerald-400 transition-colors shrink-0"
-                    >
-                        <ChefHat className="w-4 h-4" />
-                    </button>
-                    <button
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isProcessing}
-                        className={clsx(
-                            'w-8 h-8 rounded-xl flex items-center justify-center transition-colors shrink-0',
-                            pendingImage
-                                ? 'text-emerald-400'
-                                : 'text-zinc-400/60 hover:text-zinc-300'
+                <div className="flex items-end gap-2 bg-surface2 border border-th-border-strong rounded-2xl px-3 py-2">
+                    {/* Choices button — double gear */}
+                    <div className="relative shrink-0">
+                        <button
+                            onClick={() => setShowChoicesMenu(v => !v)}
+                            className={clsx(
+                                'relative w-9 h-9 rounded-xl flex items-center justify-center active:scale-95 transition-all',
+                                (pendingImage || pendingBarcode)
+                                    ? 'bg-emerald-500/15 border border-emerald-500/60'
+                                    : 'bg-background/60 border border-th-border'
+                            )}
+                            title="More options"
+                        >
+                            <Menu className={clsx('w-4 h-4', (pendingImage || pendingBarcode) ? 'text-emerald-400' : 'text-th-secondary')} />
+                            <span className={clsx(
+                                'absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full border flex items-center justify-center',
+                                (pendingImage || pendingBarcode)
+                                    ? 'bg-emerald-500 border-emerald-400'
+                                    : 'bg-surface border-th-border'
+                            )}>
+                                <Plus className={clsx('w-2 h-2', (pendingImage || pendingBarcode) ? 'text-zinc-900' : 'text-th-secondary')} />
+                            </span>
+                        </button>
+                        {showChoicesMenu && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => { setShowChoicesMenu(false); setShowWaterPicker(false); }} />
+                                <div className="absolute bottom-full left-0 mb-2 z-50 bg-surface border border-th-border-strong rounded-2xl shadow-xl overflow-hidden min-w-[200px]">
+                                    <button
+                                        onClick={() => { setShowFavourites(true); setShowChoicesMenu(false); }}
+                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-th-primary hover:bg-surface2 transition-colors"
+                                    >
+                                        <Star className="w-4 h-4 text-amber-400 shrink-0" />
+                                        Saved meals
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowRecipes(true); setShowChoicesMenu(false); }}
+                                        className="w-full flex items-center gap-3 px-4 py-3 text-sm text-th-primary hover:bg-surface2 transition-colors border-t border-th-border"
+                                    >
+                                        <ChefHat className="w-4 h-4 text-emerald-400 shrink-0" />
+                                        Recipes
+                                    </button>
+                                    <button
+                                        onClick={() => { fileInputRef.current?.click(); setShowChoicesMenu(false); }}
+                                        className={clsx(
+                                            'w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors border-t border-th-border',
+                                            pendingImage ? 'bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15' : 'text-th-primary hover:bg-surface2'
+                                        )}
+                                    >
+                                        <Camera className={`w-4 h-4 shrink-0 ${pendingImage ? 'text-emerald-400' : 'text-th-secondary'}`} />
+                                        Scan nutrition label
+                                        {pendingImage && <span className="ml-auto text-xs font-medium text-emerald-400">ready</span>}
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowBarcodeScanner(true); setShowChoicesMenu(false); }}
+                                        className={clsx(
+                                            'w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors border-t border-th-border',
+                                            pendingBarcode ? 'bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15' : 'text-th-primary hover:bg-surface2'
+                                        )}
+                                    >
+                                        <Barcode className={`w-4 h-4 shrink-0 ${pendingBarcode ? 'text-emerald-400' : 'text-th-secondary'}`} />
+                                        Scan barcode
+                                        {pendingBarcode && <span className="ml-auto text-xs font-medium text-emerald-400">ready</span>}
+                                    </button>
+                                    {/* Water */}
+                                    <div className="border-t border-th-border">
+                                        <button
+                                            onClick={() => setShowWaterPicker(v => !v)}
+                                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-th-primary hover:bg-surface2 transition-colors"
+                                        >
+                                            <Droplets className="w-4 h-4 text-blue-400 shrink-0" />
+                                            Log water
+                                            <ChevronDown className={clsx('w-3.5 h-3.5 ml-auto text-th-faint transition-transform', showWaterPicker && 'rotate-180')} />
+                                        </button>
+                                        {showWaterPicker && (
+                                            <div className="flex gap-2 px-4 pb-3">
+                                                {[250, 500, 750, 1000].map(ml => (
+                                                    <button
+                                                        key={ml}
+                                                        onClick={() => handleLogWater(ml)}
+                                                        className="flex-1 py-1.5 rounded-lg bg-blue-500/15 border border-blue-500/25 text-xs font-medium text-blue-300 active:scale-95 transition-transform"
+                                                    >
+                                                        {ml >= 1000 ? '1L' : `${ml}`}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </>
                         )}
-                    >
-                        <Camera className="w-4 h-4" />
-                    </button>
-                    <button
-                        onClick={() => setShowBarcodeScanner(true)}
-                        disabled={isProcessing}
-                        className={clsx(
-                            'w-8 h-8 rounded-xl flex items-center justify-center transition-colors shrink-0',
-                            pendingBarcode ? 'text-emerald-400' : 'text-zinc-400/60 hover:text-zinc-300'
-                        )}
-                    >
-                        <Barcode className="w-4 h-4" />
-                    </button>
+                    </div>
                     <textarea
                         value={input}
                         onChange={e => setInput(e.target.value)}
@@ -821,7 +849,7 @@ export const MealInput = () => {
                         }
                         disabled={isProcessing}
                         rows={1}
-                        className="flex-1 bg-transparent text-zinc-200 placeholder:text-zinc-600 focus:outline-none resize-none text-sm py-1 max-h-28 disabled:opacity-50"
+                        className="flex-1 bg-transparent text-th-primary placeholder:text-th-faint focus:outline-none resize-none text-sm py-1 max-h-28 disabled:opacity-50"
                         style={{ scrollbarWidth: 'none' }}
                     />
                     <div className="flex gap-1 items-center shrink-0">
@@ -830,7 +858,7 @@ export const MealInput = () => {
                             disabled={isProcessing}
                             className={clsx(
                                 'w-8 h-8 rounded-xl flex items-center justify-center transition-all',
-                                isListening ? 'bg-red-500/20 text-red-400 animate-pulse' : 'text-zinc-500 hover:text-zinc-300'
+                                isListening ? 'bg-red-500/20 text-red-400 animate-pulse' : 'text-th-muted hover:text-th-secondary'
                             )}
                         >
                             <Mic className="w-4 h-4" />
