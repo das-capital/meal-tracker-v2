@@ -65,6 +65,32 @@ function allOnTarget(totals: DayTotals, settings: UserSettings): boolean {
         carbsOnTarget(totals, settings) && fiberOnTarget(totals, settings);
 }
 
+export interface StreakInfo {
+    loggingStreak: number;
+    onTargetStreak: number;
+}
+
+export function computeStreaks(allMeals: Meal[], settings: UserSettings): StreakInfo {
+    const today = new Date();
+    const days = Array.from({ length: 90 }, (_, i) => format(subDays(today, i), 'yyyy-MM-dd'));
+
+    let loggingStreak = 0;
+    for (const date of days) {
+        const totals = getDayTotals(allMeals, date);
+        if (totals.hasMeals) loggingStreak++;
+        else break;
+    }
+
+    let onTargetStreak = 0;
+    for (const date of days) {
+        const totals = getDayTotals(allMeals, date);
+        if (totals.hasMeals && allOnTarget(totals, settings)) onTargetStreak++;
+        else break;
+    }
+
+    return { loggingStreak, onTargetStreak };
+}
+
 export function evaluateBadges(allMeals: Meal[], settings: UserSettings): Badge[] {
     const today = new Date();
     const last7 = Array.from({ length: 7 }, (_, i) => format(subDays(today, i), 'yyyy-MM-dd'));

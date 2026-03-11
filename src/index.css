@@ -3,8 +3,47 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Light theme (default) */
+    color-scheme: light;
+    --color-bg:             #fafafa;
+    --color-surface:        #ffffff;
+    --color-surface2:       #f4f4f5;
+    --color-border:         rgba(0, 0, 0, 0.08);
+    --color-border-strong:  rgba(0, 0, 0, 0.12);
+    --color-text-primary:   #18181b;
+    --color-text-secondary: #52525b;
+    --color-text-muted:     #71717a;
+    --color-text-faint:     #a1a1aa;
+    /* SVG chart */
+    --color-chart-grid:       #e4e4e7;
+    --color-chart-dot-stroke: #ffffff;
+    --color-chart-label:      #71717a;
+    --color-chart-axis:       #a1a1aa;
+  }
+
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --color-bg:             #09090b;
+    --color-surface:        #18181b;
+    --color-surface2:       #27272a;
+    --color-border:         rgba(255, 255, 255, 0.05);
+    --color-border-strong:  rgba(255, 255, 255, 0.10);
+    --color-text-primary:   #f4f4f5;
+    --color-text-secondary: #a1a1aa;
+    --color-text-muted:     #71717a;
+    --color-text-faint:     #52525b;
+    /* SVG chart */
+    --color-chart-grid:       #27272a;
+    --color-chart-dot-stroke: #18181b;
+    --color-chart-label:      #a1a1aa;
+    --color-chart-axis:       #52525b;
+  }
+
   body {
-    @apply bg-background text-zinc-100 font-sans antialiased overflow-hidden;
+    @apply font-sans antialiased overflow-hidden;
+    background-color: var(--color-bg);
+    color: var(--color-text-primary);
   }
 }
 

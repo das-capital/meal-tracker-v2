@@ -7,11 +7,18 @@ export default {
     theme: {
         extend: {
             colors: {
-                background: '#09090b', // Zinc 950
-                surface: '#18181b', // Zinc 900
-                primary: '#10b981', // Emerald 500
-                'primary-glow': '#34d399', // Emerald 400
-                secondary: '#27272a', // Zinc 800
+                background:       'var(--color-bg)',
+                surface:          'var(--color-surface)',
+                surface2:         'var(--color-surface2)',
+                'th-border':      'var(--color-border)',
+                'th-border-strong': 'var(--color-border-strong)',
+                'th-primary':     'var(--color-text-primary)',
+                'th-secondary':   'var(--color-text-secondary)',
+                'th-muted':       'var(--color-text-muted)',
+                'th-faint':       'var(--color-text-faint)',
+                primary:          '#10b981',
+                'primary-glow':   '#34d399',
+                secondary:        'var(--color-surface2)',
             },
             fontFamily: {
                 sans: ['Inter', 'sans-serif'],
