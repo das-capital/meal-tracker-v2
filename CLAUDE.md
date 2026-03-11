@@ -207,6 +207,66 @@ Anything vague (e.g. `"a handful of almonds"`) or not in DB → needs API key.
 
 ---
 
+## Deployment Gotchas & Lessons Learned
+
+Hard-won lessons from production debugging — read before touching `api/` or deployment config.
+
+### 1. `firebase-admin` uses `db.runTransaction()`, NOT a standalone import
+The client SDK exports `runTransaction(db, fn)` as a standalone function. The Admin SDK does NOT — it's a method on the Firestore instance.
+```ts
+// WRONG (causes 500 crash at function startup — bad import):
+import { runTransaction } from 'firebase-admin/firestore';
+await runTransaction(db, async (t) => { ... });
+
+// CORRECT:
+await db.runTransaction(async (t) => { ... });
+```
+
+### 2. Google Gemini returns 400 for invalid API keys (not 401)
+Unlike most APIs, Google's Gemini API returns **400 Bad Request** (not 401) when the API key is invalid or doesn't have access to a model. Handle it:
+```ts
+if (response.status === 400 || response.status === 401 || response.status === 403)
+    throw new Error('api_auth_error');
+```
+
+### 3. Server vs client use different Gemini models
+- **Server** (`api/ai.ts`): uses `gemini-2.5-flash` with the Vercel `GEMINI_API_KEY` — premium model, server key has access
+- **Client** (`ai-parser.ts`): uses `gemini-2.0-flash` with the user's personal key — stable/GA model, works on all free-tier keys
+- Do NOT change both to the same model without verifying the key tier
+
+### 4. Tailwind opacity modifiers fail with hex CSS variables
+`bg-background/50` generates `rgb(var(--color-bg) / 0.5)` which fails when the variable is a hex string like `#09090b`. Use a class without an opacity modifier, or define variables as RGB channels.
+```ts
+// WRONG: bg-background/50  (renders transparent — invisible text)
+// CORRECT: bg-surface2      (direct hex variable, no opacity math)
+```
+
+### 5. Missing `color-scheme` causes invisible form text
+Without `color-scheme: dark` on the dark theme, browsers use system defaults for native form controls (inputs, textareas). If the OS is in light mode, input text renders black on our dark backgrounds — invisible. Fix in `index.css`:
+```css
+:root { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
+```
+
+### 6. CORS preflight must include `Access-Control-Allow-Headers`
+The API handler must explicitly allow the `Authorization` header or the browser blocks the request:
+```ts
+res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+```
+
+### 7. PWA service worker caches aggressively
+After a new Vercel deployment, the installed PWA may still run the old JS bundle. Users need a hard refresh (`Ctrl+Shift+R`) or to open in an incognito window to get the new version. This can make bugs appear to persist after they're fixed.
+
+### 8. Adding Vercel env vars triggers a redeployment
+When you add/change env vars in Vercel Settings, Vercel redeploys using the **latest committed code**. If there's a bug in the latest commit, the new deployment will have that bug. Always ensure the latest commit is clean before adding env vars.
+
+### 9. Vercel env var naming for Vite vs Node
+- `VITE_*` prefix: exposed to the browser bundle (Vite replaces at build time)
+- No prefix: server-only (Vercel serverless functions via `process.env`)
+- Same value, two names: `VITE_ADMIN_UID` (client) and `ADMIN_UID` (server)
+
+---
+
 ## Next Steps / Backlog
 
 > Update this section at the end of each session.
@@ -215,7 +275,6 @@ Anything vague (e.g. `"a handful of almonds"`) or not in DB → needs API key.
 - [ ] Add data visualization (e.g., 7-day calorie trend chart on Home or History)
 - [ ] Add "Quick Add" buttons for common items (water, coffee)
 - [ ] Implement automated weekly summary reports
-- [ ] **Light/dark mode toggle** — proper Tailwind `darkMode: 'class'` approach: CSS custom property tokens in `index.css`, semantic color classes across all components (~10 files), toggle stored in settings, switcher in Settings page
 
 ---
 
