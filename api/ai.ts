@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, runTransaction, type Firestore } from 'firebase-admin/firestore';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
 const MAX_PROMPT = 20_000;
 const MAX_IMAGE  = 4_000_000;
@@ -41,7 +41,8 @@ async function getDailyLimit(db: Firestore): Promise<number> {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Access-Control-Allow-Origin', 'https://meal-tracker-v2-lzvh.vercel.app');
-    res.setHeader('Access-Control-Allow-Methods', 'POST');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') { res.status(204).end(); return; }
     if (req.method !== 'POST') return res.status(405).end();
 
@@ -74,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const usageRef = db.doc(`users/${uid}/usage/${today()}`);
     let count: number;
     try {
-        count = await runTransaction(db, async (t) => {
+        count = await db.runTransaction(async (t) => {
             const snap = await t.get(usageRef);
             const current = (snap.data()?.hostedKeyCount ?? 0) as number;
             if (current >= dailyLimit) throw new Error('limit_exceeded');
@@ -85,7 +86,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (err.message === 'limit_exceeded') {
             return res.status(429).json({ error: 'hosted_limit_exceeded', limit: dailyLimit });
         }
-        throw err;
+        console.error('Rate limit transaction failed:', err);
+        return res.status(500).json({ error: 'Rate limit check failed' });
     }
 
     // 4. Call Gemini
