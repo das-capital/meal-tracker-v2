@@ -42,7 +42,7 @@ async function callGeminiAPI(
     prompt: string,
     image?: { base64: string; mimeType: string }
 ): Promise<string> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
     const parts: any[] = [];
     if (image) {
         parts.push({ inline_data: { mime_type: image.mimeType, data: image.base64 } });
