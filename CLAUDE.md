@@ -265,6 +265,14 @@ When you add/change env vars in Vercel Settings, Vercel redeploys using the **la
 - No prefix: server-only (Vercel serverless functions via `process.env`)
 - Same value, two names: `VITE_ADMIN_UID` (client) and `ADMIN_UID` (server)
 
+### 10. `100vh` causes layout shift on Android Chrome (top bar hidden)
+`100vh` on Android Chrome = max viewport height (address bar hidden). When the address bar is visible the layout overflows, Chrome auto-scrolls to show the bottom content, pushing the top bar above the viewport — unreachable.
+```tsx
+// WRONG: min-h-screen / h-[calc(100vh-Xrem)] — breaks when address bar is shown
+// CORRECT: h-dvh on root layout; h-full on page containers (inherit from flex-1 parent)
+```
+`dvh` (dynamic viewport height) adapts to the actual visible area including/excluding the browser chrome.
+
 ---
 
 ## Next Steps / Backlog
@@ -272,6 +280,7 @@ When you add/change env vars in Vercel Settings, Vercel redeploys using the **la
 > Update this section at the end of each session.
 
 ### Backlog
+- [ ] **Image input** — Remove `capture="environment"` from the camera `<input>` so Android shows a picker (camera OR gallery). Rename button/option from "Scan a label" → "Image". One-line change in `MealInput.tsx`.
 - [ ] Add data visualization (e.g., 7-day calorie trend chart on Home or History)
 - [ ] Add "Quick Add" buttons for common items (water, coffee)
 - [ ] Implement automated weekly summary reports
