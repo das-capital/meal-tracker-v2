@@ -743,7 +743,6 @@ export const MealInput = () => {
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
-                    capture="environment"
                     className="hidden"
                     onChange={handleImageSelect}
                 />
@@ -796,7 +795,7 @@ export const MealInput = () => {
                                         )}
                                     >
                                         <Camera className={`w-4 h-4 shrink-0 ${pendingImage ? 'text-emerald-400' : 'text-th-secondary'}`} />
-                                        Scan nutrition label
+                                        Image
                                         {pendingImage && <span className="ml-auto text-xs font-medium text-emerald-400">ready</span>}
                                     </button>
                                     <button
