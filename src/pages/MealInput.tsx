@@ -369,7 +369,7 @@ export const MealInput = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex flex-col h-[calc(100vh-9rem)] max-w-md mx-auto px-4 select-text"
+            className="flex flex-col h-full max-w-md mx-auto px-4 select-text"
         >
             {/* Chat area */}
             <div className="flex-1 overflow-y-auto py-4 space-y-3 pb-4">

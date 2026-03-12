@@ -285,7 +285,7 @@ export const History = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="flex flex-col h-[calc(100vh-9rem)] max-w-md mx-auto px-4 pb-20"
+            className="flex flex-col h-full max-w-md mx-auto px-4 pb-20"
         >
             {/* View Mode Toggle */}
             <div className="flex bg-surface rounded-xl p-1 mb-3 shrink-0">

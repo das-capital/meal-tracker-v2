@@ -51,7 +51,7 @@ export const Home = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="flex flex-col h-[calc(100vh-9rem)] max-w-md mx-auto px-4 pb-20 overflow-y-auto"
+            className="flex flex-col h-full max-w-md mx-auto px-4 pb-20 overflow-y-auto"
         >
             {/* Calorie Ring */}
             <div className="flex flex-col items-center py-3">

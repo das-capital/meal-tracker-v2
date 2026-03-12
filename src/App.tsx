@@ -31,14 +31,14 @@ function Layout() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
+            <div className="h-dvh bg-background flex items-center justify-center">
                 <div className="text-th-faint text-sm">Loading...</div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-background text-th-primary font-sans select-none flex flex-col">
+        <div className="h-dvh bg-background text-th-primary font-sans select-none flex flex-col">
             {/* Top Bar */}
             <div className="flex items-center justify-between px-4 pt-4 pb-1 shrink-0">
                 <span className="text-sm font-medium text-th-secondary">

@@ -22,7 +22,7 @@ export const Profile = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="flex flex-col h-[calc(100vh-8rem)] max-w-md mx-auto px-4 pb-20 overflow-y-auto"
+            className="flex flex-col h-full max-w-md mx-auto px-4 pb-20 overflow-y-auto"
         >
             {/* Streak counters */}
             <h2 className="text-xs font-bold text-th-muted uppercase tracking-widest pt-3 pb-2">Streaks</h2>

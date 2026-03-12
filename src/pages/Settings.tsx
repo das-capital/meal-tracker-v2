@@ -114,7 +114,7 @@ export const SettingsPage = () => {
             initial={{ opacity: 0, x: 60 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 60 }}
-            className="max-w-md mx-auto flex flex-col h-[calc(100vh-4rem)]"
+            className="max-w-md mx-auto flex flex-col h-full"
         >
             <div className="flex items-center gap-3 px-4 py-3 shrink-0">
                 <button
